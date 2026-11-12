@@ -17,5 +17,5 @@ cd "$HOME/kr-port/port" && env "$@" BB_PAD_FILE="$P" BB_PRESENT_DUMP_TRIGGER="$T
   timeout $((secs+15)) ./out/bb-probe "$HOME/kr-port/out/boot-linked.bin" --app0 "$HOME/kr-port/game" \
   --user "$HOME/kr-port/user" --timeout "$secs" > "$d/log.txt" 2>&1
 wait
-cd "$d" && for f in f*_present_*.raw; do [ -e "$f" ] || continue; magick -size 1920x1080 -depth 8 bgra:"$f" -alpha off -resize 640x360 "${f%%_*}.png" && rm "$f"; done
+cd "$d" && for f in f*_present_*.raw; do [ -e "$f" ] || continue; sz=$(echo "$f" | grep -oE '[0-9]+x[0-9]+' | head -1); magick -size "${sz:-1920x1080}" -depth 8 bgra:"$f" -alpha off -resize 640x360 "${f%%_*}.png" && rm "$f"; done
 ls "$d"/*.png 2>/dev/null | wc -l

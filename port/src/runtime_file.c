@@ -483,7 +483,38 @@ static int sysconf_file(const char *guest,int host) {
     }
     float base,target,want=(float)fps;
     memcpy(&base,buf+0x10,4); memcpy(&target,buf+0x14,4);
-    if (target==want) { printf("Runtime: frame rate %.0f FPS (the game's own)\n",target); return host; }
+    int changed=0;
+    /* KR_RES=<width>x<height> (or 720p, 1080p, 1440p, 4k): the game's render size, the u32 pair at
+     * 0x3c (1920x1080 as shipped). The whole chain follows it (half and quarter buffers, display
+     * buffers); the presenter scales the result to the window, so above the window's size it is
+     * supersampling. The pairs at 0x1c and 0x24 change nothing seen. */
+    const char *res=getenv("KR_RES");
+    if (res && *res) {
+        unsigned w=0,h=0;
+        if (!strcasecmp(res,"720p")) { w=1280; h=720; }
+        else if (!strcasecmp(res,"1080p")) { w=1920; h=1080; }
+        else if (!strcasecmp(res,"1440p")) { w=2560; h=1440; }
+        else if (!strcasecmp(res,"4k") || !strcasecmp(res,"2160p")) { w=3840; h=2160; }
+        else if (sscanf(res,"%ux%u",&w,&h)!=2) w=h=0;
+        if (w<640 || h<360 || w>7680 || h>4320) {
+            printf("Runtime: KR_RES=%s not understood (WIDTHxHEIGHT, 640x360 to 7680x4320): render size stays\n",res);
+        } else {
+            w&=~1u; h&=~1u;
+            uint32_t old_w,old_h; memcpy(&old_w,buf+0x3c,4); memcpy(&old_h,buf+0x40,4);
+            memcpy(buf+0x3c,&w,4); memcpy(buf+0x40,&h,4); ++changed;
+            printf("Runtime: render size %ux%u (game's %ux%u) - KR_RES\n",w,h,old_w,old_h);
+        }
+    }
+    /* KR_SYSCONF_SET=off=value,... (experiments): 32-bit fields of the copy, e.g. 0x3c=2560. */
+    for (const char *s=getenv("KR_SYSCONF_SET"); s && *s;) {
+        char *end; unsigned long off=strtoul(s,&end,0), value;
+        if (*end!='=' || off+4>sizeof(buf)) break;
+        value=strtoul(end+1,&end,0);
+        uint32_t v=(uint32_t)value; memcpy(buf+off,&v,4); ++changed;
+        printf("Runtime: sysConf[%#lx] = %lu (KR_SYSCONF_SET)\n",off,value);
+        s=*end==',' ? end+1 : end;
+    }
+    if (target==want && !changed) { printf("Runtime: frame rate %.0f FPS (the game's own)\n",target); return host; }
     memcpy(buf+0x14,&want,4);
     int fixed=memfd_create("sysConf.boot",MFD_CLOEXEC);
     if (fixed<0 || write(fixed,buf,sizeof(buf))!=(ssize_t)sizeof(buf) || lseek(fixed,0,SEEK_SET)) {

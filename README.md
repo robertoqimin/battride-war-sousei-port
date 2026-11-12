@@ -77,6 +77,7 @@ Saves are stored in `user/savedata/`.
 | Variable | Effect |
 |---|---|
 | `KR_FPS=30` | restores the original 30 FPS gameplay cap (default **60**) |
+| `KR_RES=1440p` | render size: `720p`, `1080p` (the game's own), `1440p`, `4k` or `WIDTHxHEIGHT`. Above your window's size it works as supersampling (sharper edges). RX 6750 XT: 1440p holds 60 FPS, 4K drops to 43-55 FPS in combat |
 | `KR_NGS2_GAIN=x` | overall audio gain |
 | `BB_CONFIG=file.ini` | remap controls (`key.<input>=Keys`, `pad.<input>=buttons`; see `port/src/runtime_pad/bindings.c`) |
 | `BB_FPS_PRINT=1` | prints the frame rate to the terminal every 5 s |
