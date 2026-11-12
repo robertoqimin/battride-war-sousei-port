@@ -700,6 +700,7 @@ int main(int argc, char **argv) {
     }
     image = allocate(round_page(size));
     runtime_thread_profile_image((uintptr_t)image, 0xa60000);   /* kr-port: the eboot's code (KR_STALL_PROFILE) */
+    runtime_game_profile_start();   /* kr-port: KR_GAME_PROFILE */
     if (fread(image, 1, size, f) != size || fgetc(f) != EOF) fail("incorrect memory image size");
     fclose(f);
     if (!cpu_only) {

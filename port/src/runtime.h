@@ -81,6 +81,7 @@ void runtime_audiodec_report(void);
 uintptr_t runtime_krstubs_resolve(const char *name);
 uintptr_t runtime_kroffline_resolve(const char *name);
 void runtime_thread_profile_image(uintptr_t base, uint64_t size);   /* kr-port: KR_STALL_PROFILE */   /* kr-port: offline NP, Json2, DiscMap */
+void runtime_game_profile_start(void);   /* kr-port: KR_GAME_PROFILE */
 uintptr_t runtime_time_resolve(const char *name);
 void runtime_content_configure(const uint32_t values[5]);
 uintptr_t runtime_content_resolve(const char *name);

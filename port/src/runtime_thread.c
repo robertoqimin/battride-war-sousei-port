@@ -314,6 +314,7 @@ static void *host_start(void *p) {
  * thread; this samples the creating thread for 200 ms after every creation (every 1 ms, a signal:
  * RIP and the eboot return addresses found in the first 16 KiB of its stack) and prints the most
  * frequent eboot addresses, which point at what the game was doing meanwhile. */
+#include <dlfcn.h>
 #include <signal.h>
 #include <sys/syscall.h>
 #include <sys/uio.h>
@@ -426,6 +427,135 @@ static void prof_mark(const char *name) {
     snprintf(prof_label,sizeof(prof_label),"after creating '%s'",name);
     prof_tid=(pid_t)syscall(SYS_gettid);
     prof_until=prof_now()+200000000u;
+}
+/* kr-port: KR_GAME_PROFILE=<file>. A continuous sampler of the game's logic threads (names
+ * starting with an entry of KR_GAME_PROFILE_THREADS, default "main,runTaskMain,TaskJobThread"):
+ * every KR_GAME_PROFILE_US (1000) each is sent a signal whose handler records the time, the thread,
+ * its RIP, whether it sits on a syscall instruction (blocked in the kernel) and the first eboot
+ * return addresses on its stack. Records go to the file as text, one per line:
+ *   <ms> <tid> <rip: eboot offset, or h<host address>> <s if in a syscall> <eboot return addresses>
+ * and a "T <tid> <name>" line per thread, for offline analysis (tools/game_profile.py). */
+#define GP_SLOTS 65536
+#define GP_DEPTH 4
+#define GP_HOST 6
+typedef struct { uint64_t ms_x1000; int tid; int in_syscall; uint64_t rip; uint64_t ret[GP_DEPTH]; uint64_t host[GP_HOST]; } GpSample;
+/* The port's code (executable mappings of bb-probe and libbbgpu.so): return addresses into it. */
+static struct { uintptr_t lo, hi; } gp_code[8]; static int gp_ncode;
+static int gp_is_port(uint64_t a) { for (int i=0;i<gp_ncode;++i) if (a>=gp_code[i].lo && a<gp_code[i].hi) return 1; return 0; }
+static GpSample gp_ring[GP_SLOTS];
+static volatile unsigned gp_head, gp_tail;
+static uint64_t gp_start;
+static void gp_signal(int sig, siginfo_t *info, void *context) {
+    (void)sig; (void)info;
+    unsigned slot=__atomic_fetch_add(&gp_head,1,__ATOMIC_RELAXED);
+    if (slot-gp_tail>=GP_SLOTS) return;   /* the writer fell behind: dropped */
+    GpSample *s=&gp_ring[slot%GP_SLOTS];
+    ucontext_t *uc=context;
+    s->ms_x1000=(prof_now()-gp_start)/1000u;
+    s->tid=(int)syscall(SYS_gettid);
+    uintptr_t rip=(uintptr_t)uc->uc_mcontext.gregs[REG_RIP], sp=(uintptr_t)uc->uc_mcontext.gregs[REG_RSP];
+    s->rip=rip;
+    /* In a syscall: RIP right after `syscall` (0f 05), or on it when the kernel rewound it to
+     * restart the call after the handler. */
+    unsigned char code[4]={0,0,0,0};
+    struct iovec lc={code,4}, rc={(void *)(rip-2),4};
+    s->in_syscall=process_vm_readv(getpid(),&lc,1,&rc,1,0)==4 &&
+                  ((code[0]==0x0f && code[1]==0x05) || (code[2]==0x0f && code[3]==0x05));
+    int n=0;
+    uint64_t words[512];
+    /* 16 KiB, or up to 128 KiB while no eboot address was found (frames with large locals) */
+    for (int chunk=0; chunk<32 && n<GP_DEPTH && (chunk<4 || n==0); ++chunk) {
+        struct iovec local={words,sizeof(words)}, remote={(void *)(sp+(uintptr_t)chunk*sizeof(words)),sizeof(words)};
+        /* a partial read: the stack ends there (the game's main thread runs near its top) */
+        const ssize_t got=process_vm_readv(getpid(),&local,1,&remote,1,0);
+        const int count=got>0 ? (int)(got/8) : 0;
+        for (int i=0;i<count && n<GP_DEPTH;++i) if (words[i]-prof_base<prof_size && words[i]-prof_base>0x1000) s->ret[n++]=words[i]-prof_base;
+        if (count<512) break;
+    }
+    while (n<GP_DEPTH) s->ret[n++]=0;
+    int m=0;
+    const ssize_t got=process_vm_readv(getpid(),&(struct iovec){words,sizeof(words)},1,&(struct iovec){(void *)sp,sizeof(words)},1,0);
+    for (int i=0;i<(got>0 ? (int)(got/8) : 0) && m<GP_HOST;++i) if (gp_is_port(words[i])) s->host[m++]=words[i];
+    while (m<GP_HOST) s->host[m++]=0;
+    __atomic_thread_fence(__ATOMIC_RELEASE);
+}
+static int gp_wanted(const char *name, const char *list) {
+    for (const char *p=list; *p;) {
+        const char *end=strchr(p,','); size_t len=end ? (size_t)(end-p) : strlen(p);
+        if (len && !strncmp(name,p,len)) return 1;
+        if (!end) break;
+        p=end+1;
+    }
+    return 0;
+}
+static void *gp_thread(void *arg) {
+    FILE *out=arg;
+    const char *list=getenv("KR_GAME_PROFILE_THREADS"); if (!list || !*list) list="main,runTaskMain,TaskJobThread";
+    const char *e=getenv("KR_GAME_PROFILE_US"); long period=e && *e ? atol(e) : 1000; if (period<100) period=100;
+    int named[4096]; unsigned nnamed=0;
+    unsigned tick=0;
+    for (;;) {
+        pthread_mutex_lock(&lock);
+        for (GuestThread *t=threads;t;t=t->next) {
+            if (!t->tid || t->finished || !gp_wanted(t->name,list)) continue;
+            unsigned k; for (k=0;k<nnamed;++k) if (named[k]==t->tid) break;
+            if (k==nnamed && nnamed<4096) { named[nnamed++]=t->tid; fprintf(out,"T %d %s\n",t->tid,t->name); }
+            syscall(SYS_tgkill,getpid(),t->tid,SIGRTMIN+6);
+        }
+        pthread_mutex_unlock(&lock);
+        if ((++tick & 63)==0 || gp_head-gp_tail>GP_SLOTS/2) {
+            unsigned head=__atomic_load_n(&gp_head,__ATOMIC_ACQUIRE);
+            /* the newest slots may still be written by their handlers: leave the last 256 */
+            if (head-gp_tail>256) head-=256; else head=gp_tail;
+            if (head-gp_tail>GP_SLOTS) gp_tail=head-GP_SLOTS;
+            for (; gp_tail!=head; ++gp_tail) {
+                const GpSample *s=&gp_ring[gp_tail%GP_SLOTS];
+                uint64_t r=s->rip-prof_base;
+                if (r<prof_size) fprintf(out,"%llu.%03llu %d %#llx %s",(unsigned long long)(s->ms_x1000/1000),(unsigned long long)(s->ms_x1000%1000),s->tid,(unsigned long long)r,s->in_syscall?"s":"-");
+                else {
+                    /* the port's side: its symbol (exported ones), else library+offset */
+                    Dl_info di; char where[160];
+                    if (dladdr((void *)(uintptr_t)s->rip,&di) && di.dli_sname)
+                        snprintf(where,sizeof(where),"h:%s+%#llx",di.dli_sname,(unsigned long long)(s->rip-(uintptr_t)di.dli_saddr));
+                    else if (di.dli_fname) {
+                        const char *b=strrchr(di.dli_fname,'/');
+                        snprintf(where,sizeof(where),"h:%s+%#llx",b ? b+1 : di.dli_fname,(unsigned long long)(s->rip-(uintptr_t)di.dli_fbase));
+                    } else snprintf(where,sizeof(where),"h%#llx",(unsigned long long)s->rip);
+                    fprintf(out,"%llu.%03llu %d %s %s",(unsigned long long)(s->ms_x1000/1000),(unsigned long long)(s->ms_x1000%1000),s->tid,where,s->in_syscall?"s":"-");
+                }
+                for (int d=0; d<GP_DEPTH; ++d) fprintf(out," %#llx",(unsigned long long)s->ret[d]);
+                for (int d=0; d<GP_HOST && s->host[d]; ++d) {
+                    Dl_info hi;
+                    if (dladdr((void *)(uintptr_t)s->host[d],&hi) && hi.dli_sname) fprintf(out," @%s",hi.dli_sname);
+                    else fprintf(out," @?%#llx",(unsigned long long)(s->host[d]-(uintptr_t)(hi.dli_fbase)));
+                }
+                fputc('\n',out);
+            }
+            fflush(out);
+        }
+        struct timespec ts={0,period*1000}; nanosleep(&ts,NULL);
+    }
+    return NULL;
+}
+void runtime_game_profile_start(void) {
+    const char *path=getenv("KR_GAME_PROFILE");
+    if (!path || !*path) return;
+    FILE *out=fopen(path,"w");
+    if (!out) { printf("Runtime: KR_GAME_PROFILE: cannot open %s\n",path); return; }
+    struct sigaction sa={0}; sa.sa_sigaction=gp_signal; sa.sa_flags=SA_SIGINFO|SA_RESTART;
+    sigemptyset(&sa.sa_mask); sigaction(SIGRTMIN+6,&sa,NULL);
+    gp_start=prof_now();
+    FILE *maps=fopen("/proc/self/maps","r");
+    char line[512];
+    while (maps && fgets(line,sizeof(line),maps) && gp_ncode<8) {
+        unsigned long lo,hi; char perm[8];
+        if (sscanf(line,"%lx-%lx %7s",&lo,&hi,perm)==3 && perm[2]=='x' && (strstr(line,"bb-probe") || strstr(line,"libbbgpu")))
+            { gp_code[gp_ncode].lo=lo; gp_code[gp_ncode].hi=hi; ++gp_ncode; }
+    }
+    if (maps) fclose(maps);
+    fprintf(out,"# KR_GAME_PROFILE eboot base %#llx size %#llx\n",(unsigned long long)prof_base,(unsigned long long)prof_size);
+    pthread_t t; pthread_create(&t,NULL,gp_thread,out); pthread_detach(t);
+    printf("Runtime: game profile sampling to %s\n",path);
 }
 /* kr-port: stacks are reused. bbport never released them, and this game starts a thread for every
  * streamed sound ("update ngs2 stream sound"; 31 in three minutes, 320 KiB each with the margin).
