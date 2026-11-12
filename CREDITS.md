@@ -1,56 +1,56 @@
-# Créditos e licenças
+# Credits and licenses
 
-Este projeto só existe por causa do trabalho das pessoas abaixo. As licenças de cada parte são mantidas nos próprios arquivos.
+This project exists thanks to the work of the people below. Each part keeps its license in its own files.
 
-## Base do port
+## Foundation of the port
 
-### bbport: port nativo de Bloodborne para PC
-- <https://github.com/deadinside28/bloodborne_pc> (fork a partir do commit `0fc2921`)
+### bbport: native PC port of Bloodborne
+- <https://github.com/deadinside28/bloodborne_pc> (forked at commit `0fc2921`)
 - Copyright 2026 bbport contributors. **GPL-2.0-or-later.**
-- Todo o diretório `port/` vem do bbport:
-  - runtime HLE em `src/`;
-  - camada de GPU e tradutor de shaders em `gpu/`;
-  - scripts de preparação e de link, testes e `build.sh`.
-- O aviso original está em `port/NOTICE.bbport`. As alterações deste projeto estão marcadas com comentários `kr-port:`.
+- The whole `port/` directory comes from bbport:
+  - the HLE runtime in `src/`;
+  - the GPU layer and shader translator in `gpu/`;
+  - the preparation and link scripts, the tests and `build.sh`.
+- bbport's original notice is kept in `port/NOTICE.bbport`. This project's changes are marked with `kr-port:` comments.
 
-### shadPS4: emulador de PS4
+### shadPS4: PS4 emulator
 - <https://github.com/shadps4-emu/shadPS4>
 - Copyright shadPS4 Emulator Project. **GPL-2.0-or-later.**
-- A camada de GPU do bbport começou do *video core* e do recompilador de shaders do shadPS4.
-- Algumas funções deste port também foram portadas do shadPS4: Rtc, troféus e DiscMap. A origem está marcada onde o código é usado.
+- bbport's GPU layer started from shadPS4's video core and shader recompiler.
+- A few functions of this port were also ported from shadPS4: Rtc, trophies and DiscMap. Their origin is marked where the code is used.
 
-## Bibliotecas de terceiros (cada uma com sua licença na própria pasta)
+## Third-party libraries (each under the license in its own folder)
 
-| Biblioteca | Onde | Licença |
+| Library | Location | License |
 |---|---|---|
-| LibAtrac9 (Alex Barney): decodificador ATRAC9 usado pelo mixer de áudio | `port/third_party/LibAtrac9` | MIT |
-| sirit (emissor SPIR-V) | `port/gpu/third_party/sirit` | BSD-3-Clause |
+| LibAtrac9 (Alex Barney): the ATRAC9 decoder used by the audio mixer | `port/third_party/LibAtrac9` | MIT |
+| sirit (SPIR-V emitter) | `port/gpu/third_party/sirit` | BSD-3-Clause |
 | Dear ImGui | `port/gpu/third_party/imgui` | MIT |
 | AMD FidelityFX (FSR 1/3, FFX API) | `port/gpu/third_party/amd-fsr1`, `ffx-api-2.4`, `fsr-vulkan` | MIT |
-| Cabeçalhos GCN/PM4 da AMD (PAL) | `port/gpu/third_party/gcn` | MIT (AMD) |
+| AMD GCN/PM4 headers (PAL) | `port/gpu/third_party/gcn` | MIT (AMD) |
 | SMAA | `port/gpu/third_party/smaa` | MIT |
 | half | `port/gpu/third_party/half` | MIT |
 | cpp-httplib | `port/gpu/third_party/httplib` | MIT |
 | wepoll | `port/gpu/third_party/wepoll` | BSD-2-Clause |
-| Fontes DejaVu | `port/gpu/third_party/fonts` | licença Bitstream Vera / DejaVu |
-| Módulo online herdado do bbport (BBSC / shadNet) | `port/gpu/bbnet20` | GPL-2.0+ / GPL-3.0+ conforme cada arquivo |
-| Ponte DLSS (de IFreemz/shadPS4-Bloodborne-DLSS-FSR) | `port/gpu/dlss_bridge` | MIT |
+| DejaVu fonts | `port/gpu/third_party/fonts` | Bitstream Vera / DejaVu license |
+| Online module inherited from bbport (BBSC / shadNet) | `port/gpu/bbnet20` | GPL-2.0+ / GPL-3.0+ as stated in each file |
+| DLSS bridge (from IFreemz/shadPS4-Bloodborne-DLSS-FSR) | `port/gpu/dlss_bridge` | MIT |
 
-Para usar no build: SDL3 (zlib), Vulkan, Vulkan Memory Allocator e xbyak.
+Used at build time: SDL3 (zlib), Vulkan, Vulkan Memory Allocator and xbyak.
 
-## Referências consultadas
-- **SpartanPort** e o fork **shadPS4-Infamous-FixBuild**: consultados para comparar soluções; nenhum código foi copiado.
-- Ghidra (NSA), usado para analisar o executável do jogo do próprio usuário.
+## References consulted
+- **SpartanPort** and the **shadPS4-Infamous-FixBuild** fork: consulted to compare approaches; no code was copied.
+- Ghidra (NSA), used to analyze the executable from the user's own dump.
 
-## Deste projeto
-- **robertoqimin**, com a assistência do Claude (Anthropic). Trabalho próprio:
-  - o mixer Ngs2 com ATRAC9;
-  - o patch de 60 FPS por memória;
-  - os stubs offline;
-  - o layout de controles do jogo;
-  - o registro de rwlock em tabela hash;
-  - as ferramentas de benchmark.
-- Os arquivos fora de `port/` estão sob a licença **MIT** (`LICENSE`). Dentro de `port/` vale a **GPL-2.0-or-later** (`port/LICENSE`).
+## This project
+- **robertoqimin**, assisted by Claude (Anthropic). Original work includes:
+  - the Ngs2 mixer with ATRAC9;
+  - the in-memory 60 FPS patch;
+  - the offline stubs;
+  - the game's control layout;
+  - the hash-based rwlock registry;
+  - the benchmark tooling.
+- Files outside `port/` are under the **MIT** license (`LICENSE`). Inside `port/`, **GPL-2.0-or-later** applies (`port/LICENSE`).
 
-## Jogo
-*Kamen Rider: Battride War Genesis* (仮面ライダー バトライド・ウォー 創生) © Bandai Namco Entertainment, © Ishimori Productions / Toei. Este projeto **não** é afiliado à Bandai Namco, à Toei nem à Sony Interactive Entertainment, e **não contém** nenhum código ou dado do jogo.
+## The game
+*Kamen Rider: Battride War Genesis* (仮面ライダー バトライド・ウォー 創生) © Bandai Namco Entertainment, © Ishimori Productions / Toei. This project is **not** affiliated with Bandai Namco, Toei or Sony Interactive Entertainment and contains **no** game code or data.
