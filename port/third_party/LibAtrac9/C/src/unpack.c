@@ -148,6 +148,13 @@ static At9Status ReadBandParams(Block* block, BitReaderCxt* br)
 			return ERR_UNPACK_BAND_PARAMS_INVALID;
 		}
 
+		/* kr-port: band extension indexes BexGroupInfo[QuantizationUnitCount - 13] (8 entries);
+		 * a corrupt or misaligned frame read outside it and crashed the host. */
+		if (block->QuantizationUnitCount < 13 || block->QuantizationUnitCount > 20)
+		{
+			return ERR_UNPACK_BAND_PARAMS_INVALID;
+		}
+
 		block->ExtensionUnit = BandToQuantUnitCount[block->ExtensionBand];
 	}
 	else
@@ -248,6 +255,8 @@ static At9Status ReadExtensionParams(Block* block, BitReaderCxt* br)
 	int bexBand = 0;
 	if (block->BandExtensionEnabled)
 	{
+		/* kr-port: see ReadBandParams */
+		if (block->QuantizationUnitCount < 13 || block->QuantizationUnitCount > 20) return ERR_UNPACK_BAND_PARAMS_INVALID;
 		bexBand = BexGroupInfo[block->QuantizationUnitCount - 13].BandCount;
 		if (block->BlockType == Stereo)
 		{

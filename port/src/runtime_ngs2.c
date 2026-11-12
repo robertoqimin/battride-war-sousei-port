@@ -88,6 +88,14 @@ typedef struct {
     unsigned char *fifo, *sf;
     uint32_t fifo_len, fifo_cap, sf_size;
     int stream_begun, left_set;
+    /* kr-port: a stream is played in iterations: a piece with flags 0x1 starts one (its skip and
+     * sample count, e.g. a looping BGM's loop end), 0x3 pieces continue it. The game sends the
+     * whole file each time; after the count the rest is dropped and the next iteration follows
+     * without the voice ending (it ends when none comes: a track without a loop). */
+    uint64_t fifo_base;             /* stream bytes before the FIFO's head */
+    struct { uint64_t at; uint32_t skip, left; } mark[4];
+    uint32_t marks, drain_frames;
+    int draining;
     float pitch;
     float level[MAX_MATRICES][MAX_CH * MAX_CH];
     uint32_t levels[MAX_MATRICES];
@@ -189,10 +197,49 @@ static int next_block(Sampler *s) {
     s->starving = 1;
     return 0;
 }
+/* kr-port: LibAtrac9 keeps its place in the superframe (IndexInSuperframe) between calls. A
+ * sound that stopped mid-superframe, or a rejected frame, left the next sound misaligned: every
+ * frame failed after it (silent music) and corrupt frames could crash the decoder. The decoder
+ * starts over with every sound, stream and error (Atrac9ResetDecoder: InitDecoder kept that place). */
+static void stream_reset(Sampler *s);
+static void at9_restart(Sampler *s) {
+    if (!s->at9) return;
+    if (Atrac9ResetDecoder(s->at9) != 0) { Atrac9ReleaseHandle(s->at9); s->at9 = NULL; s->at9_config = 0; }
+}
+/* kr-port: decode errors are logged (the first 30): a corrupt or misaligned ATRAC9 frame. */
+static void decode_error(Sampler *s, int rc, int stream) {
+    at9_restart(s);
+    if (++decode_errors <= 30)
+        printf("Runtime: Ngs2 ATRAC9 decode error %d (%s, config %08x, superframe %d B, pos %u, frame %u, fifo %u)\n",
+               rc, stream ? "stream" : "block", s->config, s->info.superframeSize, s->pos, s->sf_frame, s->fifo_len);
+}
+static void fifo_drop(Sampler *s, uint32_t n) {
+    if (n > s->fifo_len) n = s->fifo_len;
+    memmove(s->fifo, s->fifo + n, s->fifo_len - n);
+    s->fifo_len -= n; s->fifo_base += n; s->consumed += n;
+}
+static void iteration_begin(Sampler *s, uint32_t skip, uint32_t left) {
+    s->skip = skip; s->left = left; s->left_set = left != 0;
+    s->draining = 0; s->drain_frames = 0;
+    s->sf_frame = 0; s->pcm_count = s->pcm_at = 0;
+    at9_restart(s);
+}
 /* One codec frame into s->pcm. 0 at the end of the block's data. */
 static int decode_stream_frame(Sampler *s) {
     const uint32_t sf_bytes = (uint32_t)s->info.superframeSize;
     if (!s->at9 || !sf_bytes) return 0;
+    while (s->sf_frame == 0) {                   /* iteration boundaries and the dropped rest */
+        const uint64_t to_mark = s->marks ? s->mark[0].at - s->fifo_base : UINT64_MAX;
+        if (s->marks && (s->draining || to_mark < sf_bytes)) {
+            if (to_mark > s->fifo_len) { fifo_drop(s, s->fifo_len); s->starving = 1; return 0; }
+            fifo_drop(s, (uint32_t)to_mark);
+            iteration_begin(s, s->mark[0].skip, s->mark[0].left);
+            memmove(s->mark, s->mark + 1, (--s->marks) * sizeof(*s->mark));
+            continue;
+        }
+        if (s->draining) { fifo_drop(s, s->fifo_len); s->starving = 1; return 0; }
+        break;
+    }
     if (s->sf_frame == 0) {                      /* a new superframe from the FIFO */
         if (s->fifo_len < sf_bytes) { s->starving = 1; return 0; }
         if (s->sf_size < sf_bytes) {
@@ -202,13 +249,12 @@ static int decode_stream_frame(Sampler *s) {
         }
         memcpy(s->sf, s->fifo, sf_bytes);
         memset(s->sf + sf_bytes, 0, 64);
-        memmove(s->fifo, s->fifo + sf_bytes, s->fifo_len - sf_bytes);
-        s->fifo_len -= sf_bytes;
-        s->consumed += sf_bytes;
+        fifo_drop(s, sf_bytes);
         s->pos = 0;
     }
     int used = 0;
-    if (Atrac9Decode(s->at9, s->sf + s->pos, s->pcm, &used) != 0 || used <= 0) { ++decode_errors; s->sf_frame = 0; return 0; }
+    int rc = Atrac9Decode(s->at9, s->sf + s->pos, s->pcm, &used);
+    if (rc != 0 || used <= 0) { decode_error(s, rc, 1); s->sf_frame = 0; return 0; }
     s->pos += (uint32_t)used;
     if (++s->sf_frame >= (uint32_t)s->info.framesInSuperframe) s->sf_frame = 0;
     s->pcm_count = (uint32_t)s->info.frameSamples;
@@ -220,7 +266,8 @@ static int decode_frame(Sampler *s) {
     if (s->type == TYPE_ATRAC9) {
         if (!s->at9 || s->pos >= s->end) return 0;
         int used = 0;
-        if (Atrac9Decode(s->at9, s->data + s->pos, s->pcm, &used) != 0 || used <= 0) { ++decode_errors; return 0; }
+        int rc = Atrac9Decode(s->at9, s->data + s->pos, s->pcm, &used);
+        if (rc != 0 || used <= 0) { decode_error(s, rc, 0); return 0; }
         s->pos += (uint32_t)used;
         if (++s->sf_frame >= (uint32_t)s->info.framesInSuperframe) {   /* next superframe, aligned */
             s->sf_start += (uint32_t)s->info.superframeSize;
@@ -242,6 +289,9 @@ static int decode_frame(Sampler *s) {
 /* The next sample frame of the voice, as floats. 0 when the voice has ended. */
 static int fetch(Sampler *s, float *out) {
     for (;;) {
+        if (s->stream && s->left_set && !s->left && !s->draining) {   /* the iteration's count is out */
+            s->draining = 1; s->drain_frames = 0; s->pcm_count = s->pcm_at = 0;
+        }
         if (s->pcm_at < s->pcm_count) {
             const short *p = s->pcm + (size_t)s->pcm_at++ * s->channels;
             if (s->skip) { --s->skip; continue; }
@@ -252,7 +302,6 @@ static int fetch(Sampler *s, float *out) {
             return 1;
         }
         if (s->stream) {
-            if (s->left_set && !s->left) return 0;   /* the stream's samples are all out */
             s->starving = 0;
             if (decode_frame(s)) continue;
             return s->starving ? -1 : 0;
@@ -263,7 +312,7 @@ static int fetch(Sampler *s, float *out) {
 }
 static void play(Sampler *s) {
     /* Played without blocks: a stream, whose blocks come while it plays. */
-    if (!s->blocks) s->stream = 1;
+    if (!s->blocks) { s->stream = 1; stream_reset(s); }
     s->playing = (s->blocks > 0 || s->stream) && (s->type == TYPE_PCM_I16 || (s->type == TYPE_ATRAC9 && s->at9));
     s->starving = 0;
     s->consumed = 0;
@@ -271,6 +320,7 @@ static void play(Sampler *s) {
     s->repeats_done = 0;
     s->primed = 0;
     s->decoded = 0;
+    if (s->type == TYPE_ATRAC9) at9_restart(s);
     if (s->playing) { if (s->blocks && !s->stream) start_block(s, 0); ++plays; }
     if (tracing())
         printf("NGS2 play: type=%#x ch=%u rate=%u blocks=%u [%u+%u skip %u n %u rep %#x] data=%p -> %s\n",
@@ -278,13 +328,22 @@ static void play(Sampler *s) {
                s->blocks ? s->block[0].skip : 0, s->blocks ? s->block[0].samples : 0, s->blocks ? s->block[0].repeats : 0,
                (const void *)s->data, s->playing ? "playing" : "NOT playing");
 }
+/* A finished iteration with no next one for half a second: the track had no loop, the voice ends. */
+static void drain_wait(Sampler *s, uint32_t frames) {
+    if (!s->draining || s->marks) return;
+    s->drain_frames += frames;
+    if (s->drain_frames >= (s->rate ? s->rate : 48000) / 2) {
+        s->playing = 0;
+        if (tracing()) printf("NGS2 stream ended after %llu samples\n", (unsigned long long)s->decoded);
+    }
+}
 /* Adds `frames` frames of the voice into out (out_ch interleaved floats). */
 static void mix_voice(Sampler *s, float *out, uint32_t frames, uint32_t out_ch, uint32_t system_rate) {
     if (!s->primed) {
         memset(s->a, 0, sizeof(s->a)); memset(s->b, 0, sizeof(s->b));
         int r = fetch(s, s->a);
         if (r > 0) r = fetch(s, s->b);
-        if (r < 0) return;                       /* a stream waiting for data: silence */
+        if (r < 0) { drain_wait(s, frames); return; }   /* a stream waiting for data: silence */
         if (!r) { s->playing = 0; return; }
         s->frac = 0; s->primed = 1;
     }
@@ -301,7 +360,7 @@ static void mix_voice(Sampler *s, float *out, uint32_t frames, uint32_t out_ch, 
         while (s->frac >= 1.0f) {
             float next[MAX_CH];
             int r = fetch(s, next);
-            if (r < 0) return;                   /* starving: the rest of the grain is silence */
+            if (r < 0) { drain_wait(s, frames); return; }   /* starving: the rest of the grain is silence */
             memcpy(s->a, s->b, sizeof(s->a));
             memcpy(s->b, next, sizeof(s->b));
             if (!r) {
@@ -479,7 +538,7 @@ static void trace_param(const Voice *v, const unsigned char *p, uint16_t size, u
            v->rack->id, v->index, id, size, w[0], w[1], w[2], w[3], w[4], w[5]);
 }
 static void setup_atrac9(Sampler *s) {
-    if (s->at9 && s->at9_config == s->config) return;
+    if (s->at9 && s->at9_config == s->config) { at9_restart(s); return; }
     if (!s->at9) s->at9 = Atrac9GetHandle();
     unsigned char config[4]; memcpy(config, &s->config, 4);
     if (!s->at9 || Atrac9InitDecoder(s->at9, config) != 0 || Atrac9GetCodecInfo(s->at9, &s->info) != 0 ||
@@ -490,6 +549,14 @@ static void setup_atrac9(Sampler *s) {
         return;
     }
     s->at9_config = s->config;
+}
+/* kr-port: a stopped stream's leftovers (a partial superframe in the FIFO, its skip and count)
+ * must not carry into the next sound the voice plays: they misaligned it. */
+static void stream_reset(Sampler *s) {
+    if (!s->stream) return;
+    s->fifo_len = 0; s->stream_begun = s->left_set = 0; s->sf_frame = 0; s->pos = 0;
+    s->pcm_count = s->pcm_at = 0; s->skip = s->left = 0; s->starving = 0;
+    s->fifo_base = 0; s->marks = 0; s->draining = 0; s->drain_frames = 0;
 }
 static void apply(Voice *v, const unsigned char *p, uint32_t id) {
     if (v->rack->id != RACK_SAMPLER) return;   /* mastering: passes through */
@@ -512,7 +579,7 @@ static void apply(Voice *v, const unsigned char *p, uint32_t id) {
         const unsigned char *data; const WaveformBlock *blocks; uint32_t flags, n;
         memcpy(&data, p + 8, 8); memcpy(&flags, p + 16, 4); memcpy(&n, p + 20, 4); memcpy(&blocks, p + 24, 8);
         static int traced;
-        if (tracing() && traced++ < 60)
+        if (tracing() && traced++ < 4000)
             printf("NGS2 blocks: flags=%#x n=%u data=%p [%u+%u skip %u n %u rep %#x] queued=%u playing=%d\n", flags, n,
                    (const void *)data, blocks && n ? blocks[0].offset : 0, blocks && n ? blocks[0].size : 0,
                    blocks && n ? blocks[0].skip : 0, blocks && n ? blocks[0].samples : 0, blocks && n ? blocks[0].repeats : 0,
@@ -523,8 +590,11 @@ static void apply(Voice *v, const unsigned char *p, uint32_t id) {
                 const WaveformBlock *b = &blocks[i];
                 if (!s->stream_begun) {
                     s->stream_begun = 1;
-                    s->skip = b->skip; s->left = b->samples; s->left_set = b->samples != 0;
-                    s->sf_frame = 0; s->pcm_count = s->pcm_at = 0;
+                    iteration_begin(s, b->skip, b->samples);
+                } else if ((flags & 3) == 1 && i == 0 && s->marks < 4) {   /* the next iteration */
+                    s->mark[s->marks].at = s->fifo_base + s->fifo_len;
+                    s->mark[s->marks].skip = b->skip; s->mark[s->marks].left = b->samples;
+                    ++s->marks;
                 }
                 if (s->fifo_len + b->size > s->fifo_cap) {
                     uint32_t cap = s->fifo_cap ? s->fifo_cap : 65536;
@@ -568,8 +638,8 @@ static void apply(Voice *v, const unsigned char *p, uint32_t id) {
         uint32_t e; memcpy(&e, p + 8, 4);
         switch (e) {
         case EV_PLAY: play(s); break;
-        case EV_STOP: case EV_STOP_IMM: s->playing = 0; break;
-        case EV_KILL: s->playing = 0; s->blocks = 0; break;
+        case EV_STOP: case EV_STOP_IMM: s->playing = 0; stream_reset(s); break;
+        case EV_KILL: s->playing = 0; s->blocks = 0; stream_reset(s); break;
         case EV_PAUSE: s->paused = 1; break;
         case EV_RESUME: s->paused = 0; break;
         default: { static int seen; if (!seen++) printf("Runtime: Ngs2 voice event %u ignored\n", e); }

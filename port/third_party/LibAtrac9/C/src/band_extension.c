@@ -23,6 +23,8 @@ static const double BexMode4Multiplier[8];
 void ApplyBandExtension(Block* block)
 {
 	if (!block->BandExtensionEnabled || !block->HasExtensionData) return;
+	/* kr-port: parameters reused from a rejected frame must not index outside BexGroupInfo. */
+	if (block->QuantizationUnitCount < 13 || block->QuantizationUnitCount > 20) return;
 
 	for (int i = 0; i < block->ChannelCount; i++)
 	{

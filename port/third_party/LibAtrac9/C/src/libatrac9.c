@@ -20,6 +20,11 @@ int Atrac9InitDecoder(void* handle, unsigned char * pConfigData)
 	return InitDecoder(handle, pConfigData, 16);
 }
 
+int Atrac9ResetDecoder(void* handle) /* kr-port */
+{
+	return ResetDecoder(handle);
+}
+
 int Atrac9Decode(void* handle, const unsigned char *pAtrac9Buffer, short *pPcmBuffer, int *pNBytesUsed)
 {
 	return Decode(handle, pAtrac9Buffer, (unsigned char*)pPcmBuffer, pNBytesUsed);

@@ -75,6 +75,15 @@ static At9Status ReadConfigData(ConfigData* config)
 	return ERR_SUCCESS;
 }
 
+/* kr-port: starts a new sound with the same configuration: the frame state (place in the
+ * superframe, reused band parameters, IMDCT overlap) is cleared; the shared tables stay. */
+At9Status ResetDecoder(Atrac9Handle* handle)
+{
+	if (!handle->Initialized) return ERR_NOT_IMPLEMENTED;
+	memset(&handle->Frame, 0, sizeof(handle->Frame));
+	return InitFrame(handle);
+}
+
 static At9Status InitFrame(Atrac9Handle* handle)
 {
 	const int blockCount = handle->Config.ChannelConfig.BlockCount;
