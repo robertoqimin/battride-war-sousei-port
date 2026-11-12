@@ -1,0 +1,62 @@
+# kr-port — Kamen Rider: Battride War Genesis PC port
+# NEVER commit game data or anything derived from it. Each player uses their own dump.
+
+# ---- Proprietary: the game and its files -----------------------------------------
+# merged base+patch view (links into the user's dump: eboot.bin, nativeORBIS, sce_sys, sce_module)
+/game/
+# decrypted / relocated game executables
+*.elf
+*.self
+*.sprx
+*.prx
+eboot.bin
+# game data formats, in case any get copied around
+*.fpk
+*.at9
+*.atp
+*.pkg
+*.sfo
+sce_discmap*.plt
+# copies of game files used for local tests (sysConf.boot original and 60 FPS)
+/patches/sysconf/
+
+# ---- Derived from the game's binary --------------------------------------------------
+# Ghidra project (the disassembled/decompiled game); the scripts are ours and stay
+/ghidra/*
+!/ghidra/make_project.sh
+!/ghidra/scripts/
+# import/PLT tables extracted from the eboot (regenerate with tools/*.py from your own dump)
+/imports_v*.json
+/plt_v*.json
+# scratch disassembly dumps
+*.asm
+text.bin
+
+# ---- Build outputs, runs and captures --------------------------------------------------
+# linked boot images contain the game's code; also logs, frame/audio dumps, benchmarks
+/out/
+/port/out/
+/port/pgo/
+*.raw
+*.f32
+*.frames
+
+# ---- User data (saves, caches, logs) ------------------------------------------------
+/user/
+/port/user/
+
+# ---- Screenshots and audio of the game (copyrighted art/sound; local only) ---------
+/docs/relatorios/img/*
+!/docs/relatorios/img/*tempo-de-quadro.png
+/docs/relatorios/audio/
+
+# ---- Third-party reference repositories (clone them yourself; see docs) ------------
+/refs/
+
+# ---- Editors / OS / Python -----------------------------------------------------------
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+*.swp
+.DS_Store

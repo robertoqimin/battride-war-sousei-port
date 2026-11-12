@@ -1,0 +1,10 @@
+kr-port: native PC port runtime for Kamen Rider Battride War Genesis (PS4, CUSA02716 v01.02).
+No game files are included; the user supplies a dump of their own copy.
+
+This tree is a fork of bbport (https://github.com/deadinside28/bloodborne_pc, commit 0fc2921,
+GPL-2.0-or-later): build.sh, src/, gpu/, tests/, tools/, third_party/ and scripts/prepare.py, link_libc.py,
+link_modules.py, import_scopes.py. bbport's own notice is kept in NOTICE.bbport.
+Code ported from shadPS4 (https://github.com/shadps4-emu/shadPS4, GPL-2.0-or-later) is marked
+at the place it is used.
+
+Local changes are marked with "kr-port:" comments.
