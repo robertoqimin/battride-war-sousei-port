@@ -213,6 +213,7 @@ bool Display::SubmitFlip(Port* port, s32 index, s64 flip_arg, bool at_eop) {
         ++port->flip_status.flip_pending_num; // queued and GPU-side flips together
         port->flip_status.submit_tsc = Libraries::Kernel::sceKernelReadTsc();
     }
+    BbStats::submitted_flips.fetch_add(1, std::memory_order_relaxed); // kr-port
     if (at_eop) {
         QueueFlip(port, index, flip_arg, true);
     } else {

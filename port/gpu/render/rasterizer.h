@@ -502,6 +502,9 @@ private:
 
     /// Display pass: counts the frame (BbStats::gpu_frames) and, with BB_BUFFER_STATS, the lag.
     void NoteFrameStart();
+    /// kr-port: BB_GPU_PROFILE frame bounds without the display-pass hook (OnSubmit).
+    bool profiler_display_pass = false;
+    u64 profiler_flips = 0;
     /// BB_GPU_PROFILE: a timestamp where a render pass starts (vk_gpu_profiler.h).
     void MarkPass(const GraphicsPipeline* pipeline, const RenderState& state);
     void BindVertexBuffers(const GraphicsPipeline* pipeline,

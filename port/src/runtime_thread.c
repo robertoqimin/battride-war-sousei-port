@@ -526,7 +526,23 @@ static ABI __attribute__((noreturn)) void thread_exit(void *value) {
 }
 /* pthread_exit for the online module's threads (gpu/bbnet20). */
 __attribute__((noreturn)) void runtime_thread_exit(void *value) { thread_exit(value); }
-static ABI int32_t thread_yield(void) { sched_yield(); return 0; }
+/* kr-port: the game starts a thread per streamed sound ("update ngs2 stream sound") that polls its
+ * voice in a loop: while (!done) { update(); scePthreadYield(); }. On the console the yield gives
+ * the core to the other threads of its priority; here, with idle cores, sched_yield returns at
+ * once and each stream kept a core at 100% (up to 7 at a time in combat). Those threads sleep
+ * KR_STREAM_YIELD_US (1000; 0: the plain yield) instead: the voice is fed in 8 KiB pieces and the
+ * mixer renders a grain every ~5 ms, so a 1 ms poll keeps it fed. */
+static ABI int32_t thread_yield(void) {
+    static int sleep_us=-1;
+    static _Thread_local int stream_poller=-1;
+    if (sleep_us<0) { const char *e=getenv("KR_STREAM_YIELD_US"); sleep_us=e && *e ? atoi(e) : 1000; }
+    if (stream_poller<0) stream_poller=current && !strncmp(current->name,"update ngs2 stream",18);
+    if (stream_poller && sleep_us>0) {
+        struct timespec ts={0,(long)sleep_us*1000};
+        nanosleep(&ts,NULL);
+    } else sched_yield();
+    return 0;
+}
 static ABI int32_t thread_get_prio(GuestThread *t,int *prio) {
     if (!find_thread(t)) return ERR(3);
     if (!prio) return ERR(22);

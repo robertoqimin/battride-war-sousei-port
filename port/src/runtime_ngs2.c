@@ -328,8 +328,12 @@ static void play(Sampler *s) {
                s->blocks ? s->block[0].skip : 0, s->blocks ? s->block[0].samples : 0, s->blocks ? s->block[0].repeats : 0,
                (const void *)s->data, s->playing ? "playing" : "NOT playing");
 }
+/* kr-port: grains in which a stream in mid-play had no data (KR_NGS2_PROF): its feeding thread
+ * fell behind. Not counted while it drains at its end or before its first data. */
+static size_t stream_underruns;
 /* A finished iteration with no next one for half a second: the track had no loop, the voice ends. */
 static void drain_wait(Sampler *s, uint32_t frames) {
+    if (!s->draining && s->decoded) ++stream_underruns;
     if (!s->draining || s->marks) return;
     s->drain_frames += frames;
     if (s->drain_frames >= (s->rate ? s->rate : 48000) / 2) {
@@ -518,8 +522,9 @@ static ABI int32_t system_render(void *system, const RenderBufferInfo *info, uin
         wait_sum += wait; mix_sum += mix; if (mix > mix_max) mix_max = mix;
         voices += vm; if (vm > voices_max) voices_max = vm; ++n;
         if (now - t_start >= 5.0) {
-            printf("KR ngs2 prof: %zu renders, mix avg %.3f ms max %.3f ms, lock wait avg %.3f ms, voices avg %.1f max %zu\n",
-                   n, mix_sum / n, mix_max, wait_sum / n, (double)voices / n, voices_max);
+            printf("KR ngs2 prof: %zu renders, mix avg %.3f ms max %.3f ms, lock wait avg %.3f ms, voices avg %.1f max %zu, stream underruns %zu\n",
+                   n, mix_sum / n, mix_max, wait_sum / n, (double)voices / n, voices_max, stream_underruns);
+            stream_underruns = 0;
             wait_sum = mix_sum = mix_max = 0; n = voices = voices_max = 0; t_start = now;
         }
     }

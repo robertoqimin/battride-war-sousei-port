@@ -1194,6 +1194,15 @@ void Rasterizer::NewGuestWorkInOrder() {
 
 void Rasterizer::OnSubmit(u64 started_stamp) {
     DrainDrawPipe();
+    // kr-port: BB_GPU_PROFILE frames end at the first submission after a flip when the game has
+    // no display-pass hook (NoteFrameStart runs only with camera motion, a Bloodborne feature).
+    if (auto* profiler = GpuProfiler::Get(); profiler && !profiler_display_pass) {
+        const u64 flips = BbStats::submitted_flips.load(std::memory_order_relaxed);
+        if (flips != profiler_flips) {
+            profiler_flips = flips;
+            profiler->BeginFrame();
+        }
+    }
     if (fault_process_pending) {
         fault_process_pending = false;
         buffer_cache.ProcessFaultBuffer();
@@ -1241,6 +1250,7 @@ void Rasterizer::MarkPass(const GraphicsPipeline* pipeline, const RenderState& s
 
 void Rasterizer::NoteFrameStart() {
     if (auto* profiler = GpuProfiler::Get()) {
+        profiler_display_pass = true; // kr-port
         profiler->BeginFrame();
     }
     const u64 frame = BbStats::gpu_frames.fetch_add(1, std::memory_order_relaxed) + 1;
