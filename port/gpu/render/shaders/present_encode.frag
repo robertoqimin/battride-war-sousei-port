@@ -16,6 +16,7 @@ layout(push_constant) uniform Settings {
     bool hdr;
     bool srgb_input;
     float sharpen;
+    bool area_filter;
 } settings;
 
 // The sRGB curve's constants: linear below the knee, a power above it.
@@ -58,7 +59,45 @@ vec3 Rcas(vec3 e) {
     return (lobe * (b + d + f + h) + e) / (4.0 * lobe + 1.0);
 }
 
+// kr-port: a source larger than the output (KR_RES above the window's size: supersampling).
+// Each output pixel averages the source pixels its footprint covers, each weighted by the part of
+// it inside the footprint, in linear light (HDR: as stored). The bilinear read it replaces took 4
+// texels around one point: at 1.33x (1440p into 1080p) some source pixels weighed a lot and others
+// nothing, so edges stayed jagged and thin lines shimmered. Up to 8 texels per axis (7x).
+const int MaxTaps = 8;
+
+vec4 AreaFilter(vec2 ratio) {
+    const vec2 size = vec2(textureSize(source, 0));
+    const vec2 lo = uv * size - 0.5 * ratio;
+    const vec2 hi = lo + ratio;
+    const ivec2 first = ivec2(floor(max(lo, vec2(0.0))));
+    const ivec2 last = min(ivec2(ceil(hi)) - 1, ivec2(size) - 1);
+    vec4 sum = vec4(0.0);
+    float total = 0.0;
+    for (int y = first.y; y <= last.y && y < first.y + MaxTaps; ++y) {
+        const float wy = min(hi.y, float(y + 1)) - max(lo.y, float(y));
+        for (int x = first.x; x <= last.x && x < first.x + MaxTaps; ++x) {
+            const float w = (min(hi.x, float(x + 1)) - max(lo.x, float(x))) * wy;
+            vec4 texel = texelFetch(source, ivec2(x, y), 0);
+            if (!settings.hdr) {
+                texel.rgb = Linear(texel.rgb);
+            }
+            sum += texel * w;
+            total += w;
+        }
+    }
+    return sum / max(total, 1e-6);
+}
+
 void main() {
+    // The source texels one output pixel spans (the triangle's uv is linear over the screen).
+    const vec2 ratio = abs(vec2(dFdx(uv).x, dFdy(uv).y)) * vec2(textureSize(source, 0));
+    const bool downscale = settings.area_filter && (ratio.x > 1.001 || ratio.y > 1.001);
+    if (downscale) {
+        const vec4 texel = AreaFilter(ratio);
+        color = settings.hdr ? texel : vec4(Encode(texel.rgb), texel.a);
+        return;
+    }
     vec4 texel = texture(source, uv);
     if (settings.hdr) {
         color = texel;

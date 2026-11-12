@@ -19,6 +19,9 @@ public:
         u32 srgb_input = 0;
         /// RCAS strength (0: none) on the finished frame: sharpening without an upscaler.
         float sharpen = 0.0f;
+        /// kr-port: an area filter when the input is larger than the output (KR_DOWNSCALE=0:
+        /// the bilinear read).
+        u32 area_filter = 1;
     };
 
     EncodePass(vk::Device device, vk::Format output_format);

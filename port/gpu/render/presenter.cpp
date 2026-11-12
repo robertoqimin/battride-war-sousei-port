@@ -163,6 +163,17 @@ VideoCore::Image& Presenter::RegisterVideoOutSurface(
     return image;
 }
 
+/// kr-port: KR_DOWNSCALE=0 turns off the area filter of frames scaled down to the window.
+static bool AreaFilterEnabled() {
+    static const bool enabled = [] {
+        const bool on = !bb_env_off("KR_DOWNSCALE");
+        std::printf("Presenter: frames larger than the window are %s (KR_DOWNSCALE)\n",
+                    on ? "area-filtered" : "read bilinearly");
+        return on;
+    }();
+    return enabled;
+}
+
 void Presenter::RecreateFrame(Frame& frame, u32 width, u32 height) {
     const vk::Device device = instance.GetDevice();
     device.destroyImageView(frame.image_view);
@@ -315,6 +326,7 @@ Frame* Presenter::PrepareFrame(const BbVideoOut::BufferAttributeGroup& attribute
         .sharpen = BbSettings::Get().upscaler == BbSettings::UpscalerOff && BbSettings::Get().sharpen
                        ? std::clamp(BbSettings::Get().sharpness.load(), 0.0f, 2.0f)
                        : 0.0f,
+        .area_filter = AreaFilterEnabled() ? 1u : 0u, // kr-port
     };
     // Numbered here, in command order; marked where the commands are recorded.
     const u32 stream = draw_scheduler.CrumbStream();
