@@ -64,7 +64,28 @@ python3 port/scripts/link_libc.py    game --out out
 python3 port/scripts/link_modules.py game --out out
 ```
 
-### 4. Play
+### 4. Play with the launcher (recommended)
+```sh
+tools/launcher/launcher.py              # GTK 4 + libadwaita (Python 3 with PyGObject)
+tools/launcher/install-desktop.sh       # optional: adds it to the application menu
+```
+Choose your base game and update folders and press **Prepare & Play**: the first launch links them
+into the data folder and prepares the game (step 3, about a second). The Settings, Keyboard and
+Controller pages set the window mode, render resolution, frame rate and controls; the Log page
+follows the game's output. In a checkout already set up as in step 3 the launcher uses it as
+it is (`game/`, `out/` and your saves in `user/`).
+
+#### The launcher as an AppImage
+```sh
+tools/appimage/build_appimage.py --tools ~/tools/appimage   # -> out/appimage/BattrideWarGenesis-x86_64.AppImage
+```
+`--tools` holds `appimagetool-x86_64.AppImage` (1.9.0), `runtime-x86_64` (AppImage type 2) and a static
+`patchelf` (0.18.0). The AppImage carries the launcher, the built port and the Python + GTK 4 +
+libadwaita they need; no game code or data. It runs on systems whose glibc is at least the build
+system's (built on a rolling distribution it needs a recent one; build inside an older one, such as
+Ubuntu 22.04, for wider reach). The data folder defaults to `~/.local/share/battride-war-sousei-port`.
+
+### 5. Or play from the terminal
 ```sh
 cd port
 ./out/bb-probe ../out/boot-linked.bin --app0 ../game --user ../user --timeout 0
@@ -121,7 +142,7 @@ tools/bench/bench.sh my_run [VAR=value ...]   # fixed automated route → out/be
 
 ```
 port/      runtime + GPU layer (fork of bbport; GPL-2.0-or-later)
-tools/     scripts: game view, imports, benchmark and automated routes (MIT)
+tools/     launcher, game view, imports, benchmark and automated routes (MIT)
 ghidra/    scripts to recreate the executable analysis from YOUR dump (MIT)
 docs/      game map, roadmap and per-step reports, in Portuguese (MIT)
 ```
