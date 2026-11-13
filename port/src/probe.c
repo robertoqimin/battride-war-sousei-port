@@ -703,6 +703,25 @@ int main(int argc, char **argv) {
     runtime_game_profile_start();   /* kr-port: KR_GAME_PROFILE */
     if (fread(image, 1, size, f) != size || fgetc(f) != EOF) fail("incorrect memory image size");
     fclose(f);
+    /* kr-port: the modules' parts of the image for the C++ unwinder (runtime_krunwind.c): the
+     * eboot below the first linked module, then each module, with the executable segment each
+     * starts with. */
+    {
+        uint64_t eboot_end=size;
+        for (uint64_t m=0;m<module_count;++m) if (modules[m].base<eboot_end) eboot_end=modules[m].base;
+        for (uint64_t m=0;m<=module_count;++m) {
+            const uint64_t lo=m==0 ? 0 : modules[m-1].base, hi=m==0 ? eboot_end : modules[m-1].base+modules[m-1].size;
+            uint64_t code=0, code_size=0;
+            for (uint64_t s=0;s<ns;++s)
+                if ((segments[s].flags&1) && segments[s].address>=lo && segments[s].address<hi && (!code_size || segments[s].address<code))
+                    { code=segments[s].address; code_size=segments[s].size; }
+            char name[32];
+            if (m==0) snprintf(name,sizeof(name),"eboot.bin");
+            else if (m==1) snprintf(name,sizeof(name),"libc.prx");
+            else snprintf(name,sizeof(name),"module%llu.prx",(unsigned long long)(m-1));
+            if (code_size) runtime_unwind_add_region(name,(uintptr_t)image+lo,(uintptr_t)image+hi,(uintptr_t)image+code,code_size);
+        }
+    }
     if (!cpu_only) {
         char title[128]="Bloodborne", serial[16]="UNKNOWN", sfo[4096];
         uint32_t attributes=0;

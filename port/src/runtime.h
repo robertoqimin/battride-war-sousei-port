@@ -68,6 +68,12 @@ uintptr_t runtime_eventflag_resolve(const char *name);
 void runtime_eventflag_report(void);
 /* kr-port: extra libkernel functions (runtime_krkernel.c). */
 uintptr_t runtime_krkernel_resolve(const char *name);
+/* kr-port: what the game's libc asks while unwinding C++ exceptions (runtime_krunwind.c). The
+ * loader registers each module's part of the image and its executable segment. */
+uintptr_t runtime_krunwind_resolve(const char *name);
+uintptr_t runtime_unwind_test_hook(const char *name, uintptr_t original);   /* KR_UNWIND_TEST */
+void runtime_unwind_add_region(const char *name, uintptr_t base, uintptr_t end, uintptr_t code,
+                               uintptr_t code_size);
 /* kr-port: libSceZlib (runtime_zlib.c). */
 uintptr_t runtime_zlib_resolve(const char *name);
 void runtime_zlib_report(void);

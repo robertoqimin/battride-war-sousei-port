@@ -241,7 +241,7 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
     if (runtime_nid_is(name, "p5EcQeEeJAE")) return (uintptr_t)guest_set_heap_api;
     uintptr_t mutex = runtime_mutex_resolve(name);
     if (mutex) return mutex;
-    uintptr_t thread = runtime_thread_resolve(name);
+    uintptr_t thread = runtime_unwind_test_hook(name, runtime_thread_resolve(name)); /* kr-port: KR_UNWIND_TEST */
     if (thread) return thread;
     uintptr_t content=runtime_content_resolve(name);
     if (content) return content;
@@ -253,6 +253,8 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
     if (eventflag) return eventflag;
     uintptr_t krkernel = runtime_krkernel_resolve(name); /* kr-port */
     if (krkernel) return krkernel;
+    uintptr_t krunwind = runtime_krunwind_resolve(name); /* kr-port: C++ exception unwinding */
+    if (krunwind) return krunwind;
     uintptr_t zlib = runtime_zlib_resolve(name); /* kr-port */
     if (zlib) return zlib;
     uintptr_t ngs2 = runtime_ngs2_resolve(name); /* kr-port */
