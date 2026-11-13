@@ -299,6 +299,23 @@ static void fault(int sig, siginfo_t *info, void *context) {
         }
         if (maps) fclose(maps);
         if (!found) { ssize_t written_=write(2, "none\n", 5); (void)written_; }
+        /* kr-port: a jump to garbage (a call through a bad pointer) leaves the caller's return
+         * address at [rsp]: the game's return addresses on the stack and the registers say where
+         * it came from and with what object. */
+        const greg_t *g = uc->uc_mcontext.gregs;
+        int at = snprintf(line, sizeof(line), "  rdi %llx rsi %llx rbx %llx rax %llx; game addresses on the stack:",
+                          (unsigned long long)g[REG_RDI], (unsigned long long)g[REG_RSI],
+                          (unsigned long long)g[REG_RBX], (unsigned long long)g[REG_RAX]);
+        uint64_t words[64] = {0};
+        struct iovec local = {words, sizeof(words)}, remote = {(void *)(uintptr_t)g[REG_RSP], sizeof(words)};
+        const ssize_t got = process_vm_readv(getpid(), &local, 1, &remote, 1, 0);
+        for (int i = 0, n = 0; i < (got > 0 ? (int)(got / 8) : 0) && n < 8 && at < (int)sizeof(line) - 32; ++i)
+            if (words[i] - (uintptr_t)image < 0x10000000) {
+                at += snprintf(line + at, sizeof(line) - at, " [rsp+%d] +0x%lx", i * 8, (unsigned long)(words[i] - (uintptr_t)image));
+                ++n;
+            }
+        snprintf(line + at, sizeof(line) - at, "\n");
+        { ssize_t written_=write(2, line, strlen(line)); (void)written_; }
     }
     /* Host call chain (frames with unwind info; guest frames end it). */
     void *frames[32];
