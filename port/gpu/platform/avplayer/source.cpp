@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 bbport contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -25,6 +26,16 @@ extern "C" int runtime_file_translate(const char* guest, char* out, size_t size)
 namespace BbAvPlayer {
 
 namespace {
+
+/// kr-port: KR_AVPLAYER_HOLD=N (default 3): video frames kept from the decoder after the game
+/// moved past them, so the GPU side (a frame or two behind) still finds them intact.
+u32 RetainedFrames() {
+    static const u32 frames = [] {
+        const char* env = std::getenv("KR_AVPLAYER_HOLD");
+        return env && *env ? u32(std::clamp(std::atoi(env), 0, 8)) : 3u;
+    }();
+    return frames;
+}
 
 constexpr s32 WarningLoopingBack = s32(0x806A00A1);
 constexpr u32 IoBufferSize = 4096;
@@ -340,7 +351,8 @@ bool Source::Start() {
     if (video.Enabled()) {
         const u32 pitch = Common::AlignUp<u32>(u32(video.codec->width), 64);
         const u32 height = Common::AlignUp<u32>(u32(video.codec->height), 16);
-        for (u32 i = 0; i < video_buffer_count; ++i) {
+        // kr-port: plus the frames held back after the game moves on (RetainedFrames).
+        for (u32 i = 0; i < video_buffer_count + RetainedFrames(); ++i) {
             video.free_buffers.Push(GuestBuffer(allocator, 0x100, pitch * height * 3 / 2, true));
         }
     }
@@ -393,6 +405,7 @@ bool Source::Stop() {
 void Source::ResetPlayback() {
     for (Track* track : {&video, &audio}) {
         track->current.reset();
+        track->retired.clear(); // kr-port
         track->frames.Clear();
         track->packets.Clear();
         track->free_buffers.Clear();
@@ -653,9 +666,18 @@ bool Source::GetVideoData(AvPlayerFrameInfoEx& info) {
     if (listener.SyncMode() == AvPlayerAvSyncMode::Default && *next > CurrentTime()) {
         return false;
     }
+    // kr-port: the frame the game held before goes back to the pool only RetainedFrames()
+    // frames later. The game draws a frame from its buffer while the GPU side runs a frame
+    // behind; recycled at once, the buffer was refilled by the decoder (ahead of time) before
+    // that draw read it: a frame from the future showed for one frame, then the picture went
+    // back ("cuts, jumps back a frame" in every movie, ~4 times in 1.5 s).
     if (video.current) {
-        video.free_buffers.Push(std::move(video.current->buffer));
+        video.retired.push_back(std::move(video.current->buffer));
         video.current.reset();
+        while (video.retired.size() > RetainedFrames()) {
+            video.free_buffers.Push(std::move(video.retired.front()));
+            video.retired.pop_front();
+        }
     }
     video.current = video.frames.Pop();
     info = video.current->info;

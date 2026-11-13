@@ -176,6 +176,9 @@ private:
         SharedQueue<GuestBuffer> free_buffers;
         SharedQueue<Frame> frames;
         std::optional<Frame> current; ///< the frame the game holds
+        /// kr-port: frames the game was given before `current`, kept out of the pool a little
+        /// longer (Source::GetVideoData).
+        std::deque<GuestBuffer> retired;
         Libraries::Kernel::Thread decoder;
         bool Enabled() const {
             return ffmpeg_index >= 0;

@@ -27,6 +27,7 @@ The project is a fork of [bbport](https://github.com/deadinside28/bloodborne_pc)
 | Audio (BGM, effects, voices; ATRAC9 via Ngs2) | ✅ no reverb, envelope or mastering yet |
 | Gamepad (DualShock, DualSense, Xbox via SDL) | ✅ |
 | Keyboard and mouse with the game's own layout | ✅ |
+| C++ exceptions (the game's own libc unwinder) | ✅ every system import the game needs is implemented |
 | Online (leaderboards etc.) | ❌ reports "signed out" |
 | Windows / Steam Deck | untested |
 
@@ -79,11 +80,12 @@ Saves are stored in `user/savedata/`.
 | `KR_FPS=30` | restores the original 30 FPS gameplay cap (default **60**) |
 | `KR_RES=1440p` | render size: `720p`, `1080p` (the game's own), `1440p`, `4k` or `WIDTHxHEIGHT`. Above your window's size it works as supersampling (sharper edges). RX 6750 XT: 1440p holds 60 FPS, 4K drops to 43-55 FPS in combat |
 | `KR_DOWNSCALE=0` | turns off the area filter used when the frame is larger than the window (default **on**: each window pixel averages the frame pixels it covers, in linear light; off: the old bilinear read) |
+| `KR_AVPLAYER_HOLD=N` | movie frames kept from the decoder after the game moves past them (default **3**; `0` = the old behaviour, which showed a wrong frame for an instant several times per second) |
 | `KR_NGS2_GAIN=x` | overall audio gain |
 | `BB_CONFIG=file.ini` | remap controls (`key.<input>=Keys`, `pad.<input>=buttons`; see `port/src/runtime_pad/bindings.c`) |
 | `BB_FPS_PRINT=1` | prints the frame rate to the terminal every 5 s |
 
-Diagnostics: `KR_TRACE_NGS2`, `KR_NGS2_PROF`, `KR_IO_TRACE`, `KR_STALL_PROFILE`, `KR_PAD_TRACE` and `BB_FRAME_LOG=<csv>`.
+Diagnostics: `KR_TRACE_NGS2`, `KR_NGS2_PROF`, `KR_IO_TRACE`, `KR_STALL_PROFILE`, `KR_GAME_PROFILE=<file>` (with `tools/game_profile.py`), `KR_UNWIND_TEST=<eboot return offset>` (throws a C++ exception there to check unwinding), `KR_PAD_TRACE`, `BB_GPU_PROFILE` (+ `BB_GPU_PROFILE_SLOW_MS`) and `BB_FRAME_LOG=<csv>`.
 
 ---
 
