@@ -382,35 +382,7 @@ add_executable(fsr4-bench EXCLUDE_FROM_ALL tools/fsr4_bench.cpp
 target_include_directories(fsr4-bench PRIVATE upscale/fsr411)
 target_link_libraries(fsr4-bench PRIVATE ffx-vulkan::fsr4-v07-vulkan ffx-vulkan::fsr4-v07-assets Vulkan::Vulkan)
 
-# bbport online module (gpu/bbnet20, libbbnet20.so): built when its libraries are there (shell.nix);
-# BB_NET=OFF leaves it out. Without it the port plays offline.
-option(BB_NET "Build the online module (shadNet)" ON)
-if (BB_NET)
-    find_package(Protobuf CONFIG QUIET)
-    find_package(nlohmann_json CONFIG QUIET)
-    find_package(OpenSSL QUIET)
-    find_package(ZLIB QUIET)
-    find_path(MINIUPNPC_INCLUDE miniupnpc.h PATH_SUFFIXES miniupnpc)
-    find_library(MINIUPNPC_LIBRARY NAMES miniupnpc)
-    if (Protobuf_FOUND AND nlohmann_json_FOUND AND OpenSSL_FOUND AND ZLIB_FOUND AND
-        MINIUPNPC_INCLUDE AND MINIUPNPC_LIBRARY)
-        add_subdirectory(bbnet20)
-        message(STATUS "Online module: on (libbbnet20.so)")
-    else()
-        # Named one by one (#145: "the build has no online module" with no hint why).
-        set(missing "")
-        foreach(dep Protobuf nlohmann_json OpenSSL ZLIB)
-            if (NOT ${dep}_FOUND)
-                list(APPEND missing ${dep})
-            endif()
-        endforeach()
-        if (NOT MINIUPNPC_INCLUDE OR NOT MINIUPNPC_LIBRARY)
-            list(APPEND missing miniupnpc)
-        endif()
-        list(JOIN missing ", " missing)
-        message(STATUS "Online module: off (missing: ${missing}; shell.nix lists the packages)")
-    endif()
-endif()
+# kr-port: bbport's online module (gpu/bbnet20) is not part of this port: the game plays offline.
 
 # bbport: the shader corpus replay (render/shader_capture.h): ninja -C out/gpu shader-corpus-test.
 add_executable(shader-corpus-test EXCLUDE_FROM_ALL ../tests/test_shader_corpus.cpp

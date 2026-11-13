@@ -12,6 +12,7 @@ This project exists thanks to the work of the people below. Each part keeps its 
   - the GPU layer and shader translator in `gpu/`;
   - the preparation and link scripts, the tests and `build.sh`.
 - bbport's original notice is kept in `port/NOTICE.bbport`. This project's changes are marked with `kr-port:` comments.
+- Left out of this fork because this game does not use them: bbport's Bloodborne profile and hooks (`gpu/games/bloodborne*`) and its online module (`gpu/bbnet20`, with the cpp-httplib and wepoll libraries only it used).
 
 ### shadPS4: PS4 emulator
 - <https://github.com/shadps4-emu/shadPS4>
@@ -30,10 +31,7 @@ This project exists thanks to the work of the people below. Each part keeps its 
 | AMD GCN/PM4 headers (PAL) | `port/gpu/third_party/gcn` | MIT (AMD) |
 | SMAA | `port/gpu/third_party/smaa` | MIT |
 | half | `port/gpu/third_party/half` | MIT |
-| cpp-httplib | `port/gpu/third_party/httplib` | MIT |
-| wepoll | `port/gpu/third_party/wepoll` | BSD-2-Clause |
 | DejaVu fonts | `port/gpu/third_party/fonts` | Bitstream Vera / DejaVu license |
-| Online module inherited from bbport (BBSC / shadNet) | `port/gpu/bbnet20` | GPL-2.0+ / GPL-3.0+ as stated in each file |
 | DLSS bridge (from IFreemz/shadPS4-Bloodborne-DLSS-FSR) | `port/gpu/dlss_bridge` | MIT |
 
 Used at build time: SDL3 (zlib), Vulkan, Vulkan Memory Allocator and xbyak.

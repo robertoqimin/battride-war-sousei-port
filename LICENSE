@@ -30,7 +30,7 @@ the top-level files), unless a file says otherwise.
 The port/ directory is a fork of bbport and stays under the GNU General Public
 License, version 2 or (at your option) any later version: see port/LICENSE,
 port/NOTICE, port/NOTICE.bbport and CREDITS.md. Some parts of it carry other
-licenses stated in their own files (GPL-3.0-or-later, MIT, BSD, zlib, ...).
+licenses stated in their own files (MIT, BSD, zlib, ...).
 The program built from port/ (bb-probe) is distributed under the GPL.
 
 No game code or data is part of this repository.

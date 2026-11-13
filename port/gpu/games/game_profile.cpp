@@ -12,11 +12,11 @@
 
 namespace Game {
 
-// One per game (games/<game>.cpp).
-extern const Profile BloodborneProfile;
+// One per game (games/<game>.cpp). kr-port: bbport's Bloodborne profile is not part of this port;
+// this game runs on the generic paths.
 
 namespace {
-constexpr std::array<const Profile*, 1> Profiles = {&BloodborneProfile};
+constexpr std::array<const Profile*, 0> Profiles = {};
 std::atomic<const Profile*> active{nullptr};
 } // namespace
 
