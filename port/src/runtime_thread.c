@@ -315,6 +315,8 @@ static void *host_start(void *p) {
  * RIP and the eboot return addresses found in the first 16 KiB of its stack) and prints the most
  * frequent eboot addresses, which point at what the game was doing meanwhile. */
 #include <dirent.h>
+#include <sys/prctl.h>
+#include <stdint.h>
 #include <dlfcn.h>
 #include <signal.h>
 #include <sys/syscall.h>
@@ -325,7 +327,8 @@ static char prof_label[64];
 #define PROF_SLOTS 65536
 #define PROF_DEPTH 6
 static uint64_t prof_pc[PROF_SLOTS][PROF_DEPTH]; static int prof_who[PROF_SLOTS]; static volatile unsigned prof_count;
-void runtime_thread_profile_image(uintptr_t base, uint64_t size) { prof_base=base; prof_size=size; }
+extern uintptr_t kr_stream_loop_return, kr_flip_loop_return;   /* kr-port: loops whose yield waits (thread_yield) */
+void runtime_thread_profile_image(uintptr_t base, uint64_t size) { prof_base=base; prof_size=size; kr_stream_loop_return=base+0x2d74ce; kr_flip_loop_return=base+0x62d655; }
 static uint64_t prof_now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t); return (uint64_t)t.tv_sec*1000000000u+(uint64_t)t.tv_nsec; }
 static void prof_signal(int sig, siginfo_t *info, void *context) {
     (void)sig; (void)info;
@@ -693,22 +696,135 @@ static ABI __attribute__((noreturn)) void thread_exit(void *value) {
 /* pthread_exit for the online module's threads (gpu/bbnet20). */
 __attribute__((noreturn)) void runtime_thread_exit(void *value) { thread_exit(value); }
 /* kr-port: the game starts a thread per streamed sound ("update ngs2 stream sound") that polls its
- * voice in a loop: while (!done) { update(); scePthreadYield(); }. On the console the yield gives
- * the core to the other threads of its priority; here, with idle cores, sched_yield returns at
- * once and each stream kept a core at 100% (up to 7 at a time in combat). Those threads sleep
- * KR_STREAM_YIELD_US (1000; 0: the plain yield) instead: the voice is fed in 8 KiB pieces and the
- * mixer renders a grain every ~5 ms, so a 1 ms poll keeps it fed. */
-static ABI int32_t thread_yield(void) {
-    static int sleep_us=-1;
-    static _Thread_local int stream_poller=-1;
-    if (sleep_us<0) { const char *e=getenv("KR_STREAM_YIELD_US"); sleep_us=e && *e ? atoi(e) : 1000; }
-    if (stream_poller<0) stream_poller=current && !strncmp(current->name,"update ngs2 stream",18);
-    if (stream_poller && sleep_us>0) {
-        struct timespec ts={0,(long)sleep_us*1000};
+ * voice in a loop (eboot 0x2d74c0, the stream object in rbx):
+ *     while (state != 5) { update(); scePthreadYield(); }      state at object+0xc
+ * On the console the yield gives the core to the other threads of its priority; here, with idle
+ * cores, sched_yield returns at once and each stream kept a core at 100% (up to 7 at a time in
+ * combat). Such a thread sleeps KR_STREAM_YIELD_US (1000; 0: the plain yield) instead, but only
+ * while its stream plays (state below 4): once update() has set 5 (finished) or the stream is
+ * stopping (4), the yield returns at once and the thread leaves in microseconds, as before. The
+ * game reuses the stream object for its next sound and starts a new thread without joining the
+ * old one, trusting it to be gone: a thread still asleep then woke on the new sound and ran
+ * beside the new thread on the same object (a crash at RIP 0x1 in a long session). */
+uintptr_t kr_stream_loop_return;   /* image + 0x2d74ce, set with the image (runtime_thread_profile_image) */
+/* image + 0x62d655: the game's flip function (0x62d5f0) waiting for the GPU to finish with the
+ * next display buffer: while (*label != 1) scePthreadYield(); */
+uintptr_t kr_flip_loop_return;
+/* KR_STREAM_RACE_CHECK=1 (diagnostics): counts two stream threads polling one stream object at
+ * once (the race above), printed every 10 s. KR_STREAM_YIELD_GATE=0: the sleep regardless of the
+ * stream's state (the behaviour before this gate, for comparison). */
+static void stream_race_note(uintptr_t object) {
+    static int enabled=-1;
+    if (enabled<0) { const char *e=getenv("KR_STREAM_RACE_CHECK"); enabled=e && e[0]=='1'; }
+    if (!enabled || !object) return;
+    static struct { uintptr_t object; int tid; uint64_t at; } seen[512];
+    static unsigned overlaps; static uint64_t reported;
+    const int tid=current ? current->tid : 0;
+    const uint64_t now=prof_now();
+    unsigned slot=(unsigned)((object>>4)*0x9E3779B1u)%512;
+    pthread_mutex_lock(&lock);
+    int other_alive=0;
+    if (seen[slot].object==object && seen[slot].tid!=tid && now-seen[slot].at<20000000u)
+        for (GuestThread *g=threads;g;g=g->next) if (g->tid==seen[slot].tid && !g->finished) { other_alive=1; break; }
+    /* a new thread taking over an object an old one polled: how soon after its last poll */
+    static unsigned reuse[4];   /* < 1 ms, < 2 ms, < 5 ms, < 20 ms */
+    if (!other_alive && seen[slot].object==object && seen[slot].tid!=tid && now-seen[slot].at<20000000u) {
+        const uint64_t gap=now-seen[slot].at;
+        ++reuse[gap<1000000u ? 0 : gap<2000000u ? 1 : gap<5000000u ? 2 : 3];
+    }
+    if (other_alive) {
+        if (overlaps++<5) printf("Runtime: stream object %#lx polled by threads %d and %d at once\n",(unsigned long)object,seen[slot].tid,tid);
+    }
+    seen[slot].object=object; seen[slot].tid=tid; seen[slot].at=now;
+    if (now-reported>10000000000u) { if (reported) printf("Runtime: stream race check: %u overlaps; object reused by a new thread after <1 ms %u, <2 ms %u, <5 ms %u, <20 ms %u\n",overlaps,reuse[0],reuse[1],reuse[2],reuse[3]); reported=now; }
+    pthread_mutex_unlock(&lock);
+}
+ABI __attribute__((used)) int32_t kr_thread_yield_c(int mode, uintptr_t object);
+ABI __attribute__((used)) int32_t kr_thread_yield_c(int mode, uintptr_t object) {
+    static int gate=-1;
+    if (gate<0) { const char *e=getenv("KR_STREAM_YIELD_GATE"); gate=!(e && e[0]=='0'); }
+    stream_race_note(object);
+    /* mode 1: the stream loop, playing; 2: the stream loop, stopping or finished; 3: the flip
+     * loop; 0: elsewhere */
+    const int may_sleep = mode==1 || (mode==2 && !gate);
+    static int sleep_us=-1, avplayer_us=-1, flip_us=-1;
+    static _Thread_local int kind=-1;   /* 1: a stream thread, 2: the game's AvPlayer thread */
+    if (sleep_us<0) {
+        const char *e=getenv("KR_STREAM_YIELD_US"); sleep_us=e && *e ? atoi(e) : 1000;
+        e=getenv("KR_AVPLAYER_YIELD_US"); avplayer_us=e && *e ? atoi(e) : 1000;
+        e=getenv("KR_FLIP_WAIT_MARGIN_US"); flip_us=e && *e ? atoi(e) : 0;
+    }
+    if (kind<0) kind=!current ? 0 : !strncmp(current->name,"update ngs2 stream",18) ? 1 :
+                     !strncmp(current->name,"Update AvPlayer",15) ? 2 : 0;
+    long us=0;
+    if (kind==1 && may_sleep) us=sleep_us;
+    /* The game's AvPlayer thread polls for the next movie frame in a loop with a yield (it kept a
+     * core at 100% while a movie played): frames come every 33 ms, a 1 ms poll is plenty. */
+    else if (kind==2) us=avplayer_us;
+    /* The flip loop (rbx: the display buffer's label, 1 once the GPU has finished with it). It
+     * kept half a core spinning through a wait of 5-11 ms per frame. The GPU writes that label
+     * itself (no CPU hook sees it), and sleeping in fixed steps through the whole wait now and
+     * then woke too late for the vblank in heavy scenes. So the wait is predicted: it sleeps
+     * (steps of at most 0.5 ms, 1 us timer slack) until the shortest of the last 8 waits less
+     * KR_FLIP_WAIT_MARGIN_US, then yields as before: the end of the wait, when the label can
+     * turn, is spun through as on the console. Off by default (0): measured on an 8-core CPU, it
+     * freed 30-40% of a core but cost about one missed vblank more every two minutes of heavy
+     * combat; 1000 is for CPUs with few cores, where the freed core may be worth more. */
+    else if (mode==3 && flip_us>0) {
+        static _Thread_local uint64_t wait_start, wait_last, recent[8];
+        static _Thread_local unsigned recent_n, recent_i;
+        static _Thread_local int slack_set;
+        const uint64_t now=prof_now();
+        if (!wait_last || now-wait_last>1000000u) {   /* a new wait: the last one lasted until wait_last */
+            if (wait_start && wait_last>wait_start) { recent[recent_i++%8]=wait_last-wait_start; if (recent_n<8) ++recent_n; }
+            wait_start=now;
+        }
+        wait_last=now;
+        if (recent_n>=4) {
+            uint64_t shortest=recent[0];
+            for (unsigned i=1;i<recent_n;++i) if (recent[i]<shortest) shortest=recent[i];
+            const uint64_t margin=(uint64_t)flip_us*1000u, waited=now-wait_start;
+            if (shortest>margin && waited+margin<shortest) {
+                if (!slack_set) { prctl(PR_SET_TIMERSLACK,1000UL,0,0,0); slack_set=1; }
+                const uint64_t left=shortest-margin-waited;
+                us=(long)((left<500000u ? left : 500000u)/1000u);
+                if (us<1) us=1;
+                wait_last=now+(uint64_t)us*1000u;   /* the sleep is part of this wait */
+            }
+        }
+    }
+    if (us>0) {
+        struct timespec ts={0,us*1000};
         nanosleep(&ts,NULL);
     } else sched_yield();
     return 0;
 }
+/* The yield's entry: may_sleep only from the stream loop (its return address) with the stream
+ * playing ([rbx+0xc] < 4). */
+__asm__(
+    ".text\n"
+    ".globl kr_thread_yield\n"
+    "kr_thread_yield:\n"
+    "  xor %edi, %edi\n"
+    "  xor %esi, %esi\n"
+    "  mov (%rsp), %rax\n"
+    "  cmp kr_flip_loop_return(%rip), %rax\n"
+    "  jne 2f\n"
+    "  mov $3, %edi\n"
+    "  mov %rbx, %rsi\n"
+    "  jmp 1f\n"
+    "2:\n"
+    "  cmp kr_stream_loop_return(%rip), %rax\n"
+    "  jne 1f\n"
+    "  mov %rbx, %rsi\n"
+    "  mov $2, %edi\n"
+    "  cmpl $4, 0xc(%rbx)\n"
+    "  jae 1f\n"
+    "  mov $1, %edi\n"
+    "1:\n"
+    "  jmp kr_thread_yield_c\n");
+int32_t kr_thread_yield(void);
+#define thread_yield kr_thread_yield
 static ABI int32_t thread_get_prio(GuestThread *t,int *prio) {
     if (!find_thread(t)) return ERR(3);
     if (!prio) return ERR(22);

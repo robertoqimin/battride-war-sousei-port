@@ -23,6 +23,12 @@ if (BB_LTO)
     check_ipo_supported(RESULT bb_ipo_ok OUTPUT bb_ipo_error)
     if (bb_ipo_ok)
         set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+        # kr-port: BB_LTO_JOBS (build.sh, from the memory available): GCC's LTO link jobs instead
+        # of one per CPU (-flto=auto), whose memory together could exhaust a 16 GiB machine.
+        set(BB_LTO_JOBS "" CACHE STRING "LTO link jobs (GCC); empty: one per CPU")
+        if (BB_LTO_JOBS AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            add_link_options(-flto=${BB_LTO_JOBS})
+        endif()
     else()
         message(WARNING "LTO unavailable: ${bb_ipo_error}")
     endif()

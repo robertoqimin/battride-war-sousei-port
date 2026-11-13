@@ -55,12 +55,20 @@ if ! fsr_patches_apply --check 2>/dev/null; then
     git -C gpu/third_party/fsr-vulkan checkout -- .
 fi
 fsr_patches_apply
+# kr-port: parallel jobs by the memory available (2 GiB per C++/LTO job, at least 2,
+# at most the CPU count): ninja's default (CPUs + 2) and LTO's (every CPU) together could take
+# more than 10 GiB with the desktop open. BB_JOBS=N sets it.
+if [[ -z ${BB_JOBS:-} ]]; then
+    avail_kib=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo)
+    BB_JOBS=$(( avail_kib / 2097152 ))
+    (( BB_JOBS < 2 )) && BB_JOBS=2
+    (( BB_JOBS > $(nproc) )) && BB_JOBS=$(nproc)
+fi
 cmake -S gpu -B out/gpu -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBB_PGO="$pgo" \
-    -DBB_LTO="${BB_LTO:-ON}" -DBB_PGO_DIR="$PWD/pgo" > out/gpu-cmake.log
-grep '^-- Online module' out/gpu-cmake.log || true
-echo "GPU library: PGO $pgo, LTO ${BB_LTO:-ON}"
+    -DBB_LTO="${BB_LTO:-ON}" -DBB_PGO_DIR="$PWD/pgo" -DBB_LTO_JOBS="$BB_JOBS" > out/gpu-cmake.log
+echo "GPU library: PGO $pgo, LTO ${BB_LTO:-ON}, $BB_JOBS jobs"
 # A failed GPU build must stop here: an older libbbgpu.so would otherwise be used silently.
-if ! ninja -C out/gpu bbgpu > out/gpu-build.log 2>&1; then
+if ! ninja -C out/gpu -j "$BB_JOBS" bbgpu > out/gpu-build.log 2>&1; then
     grep -v '^\[' out/gpu-build.log | tail -40 >&2
     echo 'GPU library build failed (full log: out/gpu-build.log)' >&2; exit 1
 fi

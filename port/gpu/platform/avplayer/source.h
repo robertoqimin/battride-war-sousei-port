@@ -224,6 +224,9 @@ private:
     std::optional<Clock::time_point> start_time;
     std::optional<u64> last_audio_ms;
     std::optional<Clock::time_point> last_audio_time;
+    /// kr-port: the smoothed playback clock (Source::CurrentTime): its value and when.
+    std::optional<Clock::time_point> smooth_time;
+    double smooth_ms = 0;
     Clock::time_point pause_start{};
     Clock::duration paused_for{};
 

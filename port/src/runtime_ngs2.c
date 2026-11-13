@@ -535,8 +535,8 @@ static ABI int32_t system_render(void *system, const RenderBufferInfo *info, uin
 /* ---------------------------------------------------------------- voice control ---- */
 /* KR_TRACE_NGS2=1: every parameter of the first 400 (id, size, payload words). */
 static void trace_param(const Voice *v, const unsigned char *p, uint16_t size, uint32_t id) {
-    static int lines;
-    if (!tracing() || lines++ >= 400) return;
+    static int lines, other_lines;   /* the sampler's first 400; the other racks' (mastering) first 200 */
+    if (!tracing() || (v->rack->id == RACK_SAMPLER ? lines++ : other_lines++) >= (v->rack->id == RACK_SAMPLER ? 400 : 200)) return;
     uint32_t w[6] = {0};
     memcpy(w, p + 8, size >= 8 + sizeof(w) ? sizeof(w) : size > 8 ? size - 8u : 0u);
     printf("NGS2 rack %#x voice %u param id=%#x size=%u: %08x %08x %08x %08x %08x %08x\n",

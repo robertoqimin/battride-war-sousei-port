@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 bbport contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -417,6 +418,7 @@ void Source::ResetPlayback() {
     start_time.reset();
     last_audio_ms.reset();
     last_audio_time.reset();
+    smooth_time.reset(); // kr-port
     paused_for = {};
 }
 
@@ -645,7 +647,28 @@ u64 Source::CurrentTime() {
     if (audio.Enabled()) {
         // The audio clock: the last frame the game took, plus the time since.
         const auto since = now - last_audio_time.value_or(now) - paused_for;
-        return last_audio_ms.value_or(0) + u64(std::max<s64>(0, duration_cast<milliseconds>(since).count()));
+        const u64 raw = last_audio_ms.value_or(0) + u64(std::max<s64>(0, duration_cast<milliseconds>(since).count()));
+        // kr-port: smoothed over time (KR_AVPLAYER_SMOOTH_MS, 500; 0: off). The game takes audio
+        // frames ahead and in bursts, so the raw clock is a sawtooth (a jump per burst, then a
+        // slow climb): 30 fps frames near a 60 Hz poll's edge showed 1, 2, 3 times instead of 2
+        // (judder every ~7 frames). The smoothed clock runs with the steady clock and closes
+        // dt / 500 ms of its gap to the audio clock per query (a per-query factor did nothing: the
+        // game polls thousands of times a second); 150 ms apart (a seek, a pause) it jumps.
+        static const double smooth_window = [] {
+            const char* env = std::getenv("KR_AVPLAYER_SMOOTH_MS");
+            return env && *env ? std::atof(env) : 500.0;
+        }();
+        if (smooth_window <= 0) {
+            return raw;
+        }
+        const double dt = smooth_time ? std::chrono::duration<double, std::milli>(now - *smooth_time).count() : 0.0;
+        const double predicted = smooth_time ? smooth_ms + dt : double(raw);
+        const double error = double(raw) - predicted;
+        smooth_ms = (!smooth_time || std::abs(error) > 150.0)
+                        ? double(raw)
+                        : predicted + error * std::min(1.0, dt / smooth_window);
+        smooth_time = now;
+        return u64(std::max(0.0, smooth_ms));
     }
     const s64 elapsed = duration_cast<milliseconds>(now - *start_time - paused_for).count();
     if (elapsed <= 0) {

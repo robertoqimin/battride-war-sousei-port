@@ -448,6 +448,8 @@ private:
     /// buffer, LDS) / a guest V#, at buffer slot `slot`: into buffer_infos.
     void BindSpecialBuffer(const Shader::BufferResource& desc, const Shader::Info& stage, u32 slot,
                            u64 alignment);
+    /// kr-port: KR_CBUF_DUMP research (raster_bind.cpp).
+    void KrDumpConstants(const Shader::Info& stage, u32 slot, VAddr address, u64 size);
     void BindGuestBuffer(const Shader::BufferResource& desc, const Gcn::Buffer& vsharp,
                          const Shader::Info& stage, u32 slot, Shader::PushData& push_data,
                          u64 alignment);

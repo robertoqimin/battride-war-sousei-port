@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // bbport render: Rasterizer, resource binding: push data, buffers, vertex and index buffers, and the texture
 // binding helper thread.
+#include <array>
+#include <set>
+#include <tuple>
 
 #include "bbport_button_prompts.h"
 #include "shim/bb_env.h"
@@ -948,10 +951,45 @@ void Rasterizer::BindSpecialBuffer(const Shader::BufferResource& desc, const Sha
     }
 }
 
+void Rasterizer::KrDumpConstants(const Shader::Info& stage, u32 slot, VAddr address, u64 size) {
+    // kr-port: KR_CBUF_DUMP=<file> with KR_CBUF_FRAMES=a,b (research for this game's camera): the
+    // vertex shader constant buffers of draws with a depth buffer, in GPU frames a and b, once per
+    // (shader, slot, size) each: "frame hash slot size floats...".
+    {
+        static FILE* dump = [] {
+            const char* path = bb_env("KR_CBUF_DUMP");
+            return path && *path ? std::fopen(path, "w") : nullptr;
+        }();
+        static const std::array<u64, 2> frames = [] {
+            std::array<u64, 2> f{~0ull, ~0ull};
+            if (const char* env = bb_env("KR_CBUF_FRAMES")) {
+                std::sscanf(env, "%llu,%llu", (unsigned long long*)&f[0], (unsigned long long*)&f[1]);
+            }
+            return f;
+        }();
+        const u64 frame = BbStats::submitted_flips.load(std::memory_order_relaxed);
+        if (dump && (frame == frames[0] || frame == frames[1]) && stage.sw_stage == Shader::SwStage::Vertex &&
+            db_desc.first && address && memory->IsValidGpuMapping(address, 0)) {
+            static std::set<std::tuple<u64, u64, u32, u64>> seen;
+            if (size >= 64 && size <= 4096 && seen.emplace(frame, stage.pgm_hash, slot, size).second) {
+                std::fprintf(dump, "%llu %016llx %u %llu", (unsigned long long)frame,
+                             (unsigned long long)stage.pgm_hash, slot, (unsigned long long)size);
+                const auto* f = reinterpret_cast<const float*>(address);
+                for (u64 i = 0; i < size / 4; ++i) {
+                    std::fprintf(dump, " %.6g", f[i]);
+                }
+                std::fprintf(dump, "\n");
+                std::fflush(dump);
+            }
+        }
+    }
+}
+
 void Rasterizer::BindGuestBuffer(const Shader::BufferResource& desc, const Gcn::Buffer& vsharp,
                                  const Shader::Info& stage, u32 slot, Shader::PushData& push_data,
                                  u64 alignment) {
     const VAddr address = vsharp.base_address;
+    KrDumpConstants(stage, slot, address, vsharp.GetSize()); // kr-port
     if (vsharp.GetSize() == 864 && gbuffer_draw && memory->IsValidGpuMapping(address, 0)) {
         camera_motion->OnConstants(reinterpret_cast<const float*>(address)); // the main camera
     }
@@ -1071,6 +1109,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
         } else if (const RingBinding* ring = num_ring_stages ? FindRingBinding(stage, index) : nullptr) {
             // Copied into the constant ring by the GPU command thread (read-only).
             if (!desc.IsSpecial()) {
+                KrDumpConstants(stage, index, ring->address, ring->size); // kr-port
                 if (ring->size == 864 && gbuffer_draw &&
                     memory->IsValidGpuMapping(ring->address, 0)) {
                     camera_motion->OnConstants(reinterpret_cast<const float*>(ring->address));
