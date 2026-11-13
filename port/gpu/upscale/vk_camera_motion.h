@@ -95,6 +95,9 @@ public:
 
     /// A bound constant buffer of 864 bytes: checks the scene constant signature.
     void OnConstants(const float* data);
+    /// kr-port: a game whose scene shaders hold the camera as one view x projection matrix (4x4,
+    /// column-major): split into the view and the projection this class works with.
+    void OnViewProjection(const float* m);
 
     /// The G-buffer pass (5+ color targets): its depth is the scene depth.
     /// `x_sign`/`y_sign`: signs of the G-buffer pass's viewport x/y scale (window = ndc * scale +

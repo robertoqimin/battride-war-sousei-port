@@ -6,6 +6,7 @@
 #include <set>
 #include <tuple>
 
+#include "games/game_profile.h"
 #include "bbport_button_prompts.h"
 #include "shim/bb_env.h"
 #include "render/raster_internal.h"
@@ -952,6 +953,12 @@ void Rasterizer::BindSpecialBuffer(const Shader::BufferResource& desc, const Sha
 }
 
 void Rasterizer::KrDumpConstants(const Shader::Info& stage, u32 slot, VAddr address, u64 size) {
+    // kr-port: this game's camera, in the scene shaders' first constants (slot 0, 176-352
+    // bytes: floats 0-15 are the view x projection matrix, the same in every scene draw).
+    if (gbuffer_draw && !Game::Active() && stage.sw_stage == Shader::SwStage::Vertex && slot == 0 &&
+        size >= 176 && size <= 352 && address && memory->IsValidGpuMapping(address, 0)) {
+        camera_motion->OnViewProjection(reinterpret_cast<const float*>(address));
+    }
     // kr-port: KR_CBUF_DUMP=<file> with KR_CBUF_FRAMES=a,b (research for this game's camera): the
     // vertex shader constant buffers of draws with a depth buffer, in GPU frames a and b, once per
     // (shader, slot, size) each: "frame hash slot size floats...".

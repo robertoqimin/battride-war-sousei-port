@@ -81,3 +81,24 @@ A captura de câmera do bbport era toda do Bloodborne: um bloco de 864 bytes com
 - `port/build.sh`, `port/gpu/CMakeLists.txt`: o limite de tarefas.
 
 **Ainda não foram enviadas ao GitHub** (junto com as duas mudanças do crash da thread de som).
+
+---
+
+## Atualização: a câmera ligada ao `CameraMotion`
+
+- **`CameraMotion::OnViewProjection`:** separa a vista×projeção deste jogo:
+  - a 4ª linha é o eixo de profundidade da vista (w = z da vista);
+  - as linhas x e y normalizadas são os eixos, e os comprimentos delas são as escalas;
+  - a 3ª linha dá `z = zs·z_vista + zo`.
+- **Passe da cena (jogo sem perfil):** um alvo de cor com profundidade D32S8 do mesmo tamanho (≥ 640 de largura). A câmera vem do primeiro draw da cena com constantes de vertex shader no slot 0 de 176–352 bytes.
+- **Resultado:** `x 1,6336, y 2,9042 (proporção 1,7778 = 16:9), zs 1,0001, zo −1,0001`, ou seja, **campo de visão vertical ~38°, plano próximo em 1 e distante em ~10.000**. Uma câmera coerente.
+- **O que descobri sobre a renderização deste jogo:** a cena é desenhada **direto no buffer de tela** (RGBA8 sRGB 1920×1080), com fumaça e HUD por cima, sem um alvo de cena separado como no Bloodborne. Por isso a visualização dos vetores (`BB_DEBUG_MOTION=1`) dispara no ponto errado e não serve para validar aqui.
+
+### O que falta para os upscalers temporais (projeto à parte)
+
+1. Redirecionar o passe da cena para um alvo **reduzido e separado** (o upscaler precisa da cena sem o HUD).
+2. Achar onde termina a cena (antes de fumaça e transparências?) e onde começa o HUD.
+3. Ligar a cor reduzida, a profundidade, os vetores e o jitter ao FSR 3/4 ou ao DLSS, e recompor com o HUD na resolução da tela.
+4. Validar os vetores de movimento.
+
+É trabalho de vários dias. A câmera, que era o pedido deste item, está achada e ligada. Nada disso afeta o jogo normal: o caminho só liga com `BB_UPSCALER` diferente de `none` (o padrão) ou com `BB_DEBUG_MOTION=1`.

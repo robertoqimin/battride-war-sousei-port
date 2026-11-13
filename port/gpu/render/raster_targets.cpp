@@ -4,6 +4,7 @@
 // copies), target lookup, the render pass (BeginRendering) and the UI placement.
 
 #include <bit>
+#include "games/game_profile.h"
 #include "render/raster_internal.h"
 #include "shim/bb_env.h"
 
@@ -186,6 +187,18 @@ void Rasterizer::PrepareRenderState(const GraphicsPipeline* pipeline) {
     // bbport: the G-buffer pass (5+ color targets) holds the scene depth, and its constants the
     // main camera (shadow passes bind the same layout with the light's camera).
     gbuffer_draw = camera_motion->Enabled() && std::popcount(key.mrt_mask) >= 5 && db_desc.first;
+    // kr-port: a game without a profile (Kamen Rider: Battride War Genesis) draws its scene into
+    // one color target with a D32S8 depth of the same size; its scene shaders hold the camera as
+    // a view x projection matrix (Rasterizer::KrSceneConstants).
+    if (camera_motion->Enabled() && !gbuffer_draw && !Game::Active() && db_desc.first &&
+        cb_descs[0].first && std::popcount(key.mrt_mask) >= 1) {
+        const auto& depth = texture_cache.GetImage(db_desc.first);
+        const auto& color = texture_cache.GetImage(cb_descs[0].first);
+        gbuffer_draw = depth.info.pixel_format == vk::Format::eD32SfloatS8Uint &&
+                       depth.info.size.width >= 640 &&
+                       depth.info.size.width == color.info.size.width &&
+                       depth.info.size.height == color.info.size.height;
+    }
     if (gbuffer_draw) {
         const auto& vp = regs.viewports[0];
         camera_motion->OnGBufferPass(db_desc.first, vp.xscale < 0.0f ? -1.0f : 1.0f,

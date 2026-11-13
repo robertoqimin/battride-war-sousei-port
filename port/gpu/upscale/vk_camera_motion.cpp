@@ -400,6 +400,49 @@ void CameraMotion::OnConstants(const float* data) {
     }
 }
 
+void CameraMotion::OnViewProjection(const float* m) {
+    if (pass_has_camera || side_pass) {
+        return;
+    }
+    // Rows of clip = M * world (the buffer is column-major: element (row r, column c) at c*4+r).
+    float r[4][4];
+    for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            r[row][col] = m[col * 4 + row];
+        }
+    }
+    // A perspective projection: w = view z (the 4th row is the view's depth axis, unit length),
+    // x and y rows are the view's axes scaled, z = zs * view z + zo.
+    const auto length3 = [](const float* v) { return std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); };
+    const float wl = length3(r[3]), xs = length3(r[0]), ys = length3(r[1]);
+    if (std::abs(wl - 1.0f) > 1e-3f || xs < 1e-3f || ys < 1e-3f) {
+        return; // not this kind of matrix (an orthographic or another pass's constants)
+    }
+    Camera cam{};
+    for (int col = 0; col < 4; ++col) {
+        cam.view[0 * 4 + col] = r[0][col] / xs;
+        cam.view[1 * 4 + col] = r[1][col] / ys;
+        cam.view[2 * 4 + col] = r[3][col];
+    }
+    const float zs = r[2][0] * r[3][0] + r[2][1] * r[3][1] + r[2][2] * r[3][2];
+    const float zo = r[2][3] - zs * r[3][3];
+    cam.inv_view = InverseAffine(cam.view);
+    // As for Bloodborne's camera: ndc +y down the screen by the G-buffer viewport's sign.
+    cam.proj = {xs * gbuffer_x_sign, ys * gbuffer_y_sign, zs, zo};
+    cam.valid = true;
+    pass_camera = cam;
+    {
+        static int told = 0;
+        if (!told) {
+            told = 1;
+            std::printf("Camera motion: view x projection camera (x scale %.4f, y scale %.4f, z %.6f "
+                        "%.4f; aspect %.4f)\n", xs, ys, zs, zo, ys / xs);
+        }
+    }
+    pass_has_camera = true;
+    frame_has_camera = true;
+}
+
 void CameraMotion::OnGBufferPass(VideoCore::ImageId depth, float x_sign, float y_sign) {
     if (depth == depth_id) {
         side_pass = false; // the scene's pass again (after a smaller one)
@@ -479,7 +522,10 @@ void CameraMotion::Overlay(VideoCore::ImageId frame) {
     auto& color = texture_cache.GetImage(frame);
     const auto depth_format = depth.info.pixel_format;
     if ((depth_format != vk::Format::eD32Sfloat && depth_format != vk::Format::eD32SfloatS8Uint) ||
-        color.info.pixel_format != vk::Format::eR8G8B8A8Unorm ||
+        // kr-port: an sRGB frame too (this game's), written through the UNORM view below (the
+        // texture cache makes its images with mutable formats and extended usage).
+        (color.info.pixel_format != vk::Format::eR8G8B8A8Unorm &&
+         color.info.pixel_format != vk::Format::eR8G8B8A8Srgb) ||
         !(color.usage_flags & vk::ImageUsageFlagBits::eStorage) ||
         color.info.size.width != depth.info.size.width ||
         color.info.size.height != depth.info.size.height) {
