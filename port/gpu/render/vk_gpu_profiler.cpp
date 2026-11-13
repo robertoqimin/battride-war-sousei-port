@@ -4,11 +4,15 @@
 #include <algorithm>
 #include "shim/bb_env.h"
 #include <array>
+#include <functional>
+#include <vector>
+#include <unordered_map>
 #include <cstdlib>
 
 #include "render/vk_gpu_profiler.h"
 #include "vulkan/instance.h"
 #include "render/scheduler.h"
+#include "bbport_toggles.h"
 
 namespace Vulkan {
 
@@ -86,6 +90,14 @@ void GpuProfiler::Collect(u32 which) {
     if (result != vk::Result::eSuccess) {
         return;
     }
+    // kr-port: BB_GPU_PROFILE_SLOW_MS=<ms>: a frame whose GPU work (gaps between submissions
+    // left out) exceeds it is printed on its own with its heaviest labels.
+    static const double slow_ms = [] {
+        const char* env = bb_env("BB_GPU_PROFILE_SLOW_MS");
+        return env && *env ? std::strtod(env, nullptr) : 0.0;
+    }();
+    double busy = 0;
+    std::vector<std::pair<double, u64>> parts;
     for (u32 i = 0; i + 1 < count; ++i) {
         const double ms = double(stamps[i + 1] - stamps[i]) * period_ns / 1e6;
         auto& total = totals[keys[which][i]];
@@ -93,7 +105,27 @@ void GpuProfiler::Collect(u32 which) {
         ++total.segments;
         if (keys[which][i] >= SubmissionGapKey && keys[which][i] < SubmissionGapKey + 0x20) {
             gaps.push_back(ms);
+        } else if (slow_ms > 0) {
+            busy += ms;
+            parts.emplace_back(ms, keys[which][i]);
         }
+    }
+    if (slow_ms > 0 && busy > slow_ms) {
+        std::unordered_map<u64, double> by_key;
+        for (const auto& [ms, key] : parts) {
+            by_key[key] += ms;
+        }
+        std::vector<std::pair<double, u64>> top;
+        for (const auto& [key, ms] : by_key) {
+            top.emplace_back(ms, key);
+        }
+        std::ranges::sort(top, std::greater<>{});
+        std::printf("GPU slow frame: %.2f ms of GPU work (GPU frame %llu):", busy,
+                    (unsigned long long)BbStats::gpu_frames.load(std::memory_order_relaxed));
+        for (size_t k = 0; k < top.size() && k < 6; ++k) {
+            std::printf(" | %.2f ms %s", top[k].first, described[top[k].second].c_str());
+        }
+        std::printf("\n");
     }
     ++frames;
 }

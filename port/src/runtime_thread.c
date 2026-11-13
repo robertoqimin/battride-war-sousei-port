@@ -314,6 +314,7 @@ static void *host_start(void *p) {
  * thread; this samples the creating thread for 200 ms after every creation (every 1 ms, a signal:
  * RIP and the eboot return addresses found in the first 16 KiB of its stack) and prints the most
  * frequent eboot addresses, which point at what the game was doing meanwhile. */
+#include <dirent.h>
 #include <dlfcn.h>
 #include <signal.h>
 #include <sys/syscall.h>
@@ -488,6 +489,21 @@ static int gp_wanted(const char *name, const char *list) {
     }
     return 0;
 }
+/* dladdr is slow (a lookup per call): the writer caches what it found per address. */
+typedef struct { uint64_t address; const char *name; uint64_t base; } GpSym;
+static GpSym gp_syms[8192];
+static const GpSym *gp_symbol(uint64_t address) {
+    GpSym *e=&gp_syms[(address*0x9E3779B97F4A7C15ull)>>51];
+    if (e->address!=address) {
+        Dl_info di; memset(&di,0,sizeof(di));
+        e->address=address; e->name=NULL; e->base=0;
+        if (dladdr((void *)(uintptr_t)address,&di)) {
+            if (di.dli_sname) { e->name=di.dli_sname; e->base=(uint64_t)(uintptr_t)di.dli_saddr; }
+            else if (di.dli_fname) { const char *b=strrchr(di.dli_fname,'/'); e->name=b ? b+1 : di.dli_fname; e->base=(uint64_t)(uintptr_t)di.dli_fbase; }
+        }
+    }
+    return e;
+}
 static void *gp_thread(void *arg) {
     FILE *out=arg;
     const char *list=getenv("KR_GAME_PROFILE_THREADS"); if (!list || !*list) list="main,runTaskMain,TaskJobThread";
@@ -503,6 +519,30 @@ static void *gp_thread(void *arg) {
             syscall(SYS_tgkill,getpid(),t->tid,SIGRTMIN+6);
         }
         pthread_mutex_unlock(&lock);
+        /* The port's own threads (not guest threads) by their host name, e.g. "bb:" for all of
+         * them: listed from /proc/self/task every 256 ticks. */
+        static int host_tids[64]; static int nhost;
+        if ((tick & 255)==0) {
+            nhost=0;
+            DIR *dir=opendir("/proc/self/task");
+            struct dirent *de;
+            while (dir && (de=readdir(dir)) && nhost<64) {
+                if (de->d_name[0]=='.') continue;
+                char path[300], comm[32]={0};
+                snprintf(path,sizeof(path),"/proc/self/task/%s/comm",de->d_name);
+                FILE *c=fopen(path,"r");
+                if (!c) continue;
+                if (fgets(comm,sizeof(comm),c)) comm[strcspn(comm,"\n")]=0;
+                fclose(c);
+                if (strncmp(comm,"bb:",3) || !gp_wanted(comm,list)) continue;
+                int tid=atoi(de->d_name);
+                host_tids[nhost++]=tid;
+                unsigned k; for (k=0;k<nnamed;++k) if (named[k]==tid) break;
+                if (k==nnamed && nnamed<4096) { named[nnamed++]=tid; fprintf(out,"T %d %s\n",tid,comm); }
+            }
+            if (dir) closedir(dir);
+        }
+        for (int i=0;i<nhost;++i) syscall(SYS_tgkill,getpid(),host_tids[i],SIGRTMIN+6);
         if ((++tick & 63)==0 || gp_head-gp_tail>GP_SLOTS/2) {
             unsigned head=__atomic_load_n(&gp_head,__ATOMIC_ACQUIRE);
             /* the newest slots may still be written by their handlers: leave the last 256 */
@@ -514,20 +554,16 @@ static void *gp_thread(void *arg) {
                 if (r<prof_size) fprintf(out,"%llu.%03llu %d %#llx %s",(unsigned long long)(s->ms_x1000/1000),(unsigned long long)(s->ms_x1000%1000),s->tid,(unsigned long long)r,s->in_syscall?"s":"-");
                 else {
                     /* the port's side: its symbol (exported ones), else library+offset */
-                    Dl_info di; char where[160];
-                    if (dladdr((void *)(uintptr_t)s->rip,&di) && di.dli_sname)
-                        snprintf(where,sizeof(where),"h:%s+%#llx",di.dli_sname,(unsigned long long)(s->rip-(uintptr_t)di.dli_saddr));
-                    else if (di.dli_fname) {
-                        const char *b=strrchr(di.dli_fname,'/');
-                        snprintf(where,sizeof(where),"h:%s+%#llx",b ? b+1 : di.dli_fname,(unsigned long long)(s->rip-(uintptr_t)di.dli_fbase));
-                    } else snprintf(where,sizeof(where),"h%#llx",(unsigned long long)s->rip);
+                    const GpSym *sym=gp_symbol(s->rip); char where[160];
+                    if (sym->name) snprintf(where,sizeof(where),"h:%s+%#llx",sym->name,(unsigned long long)(s->rip-sym->base));
+                    else snprintf(where,sizeof(where),"h%#llx",(unsigned long long)s->rip);
                     fprintf(out,"%llu.%03llu %d %s %s",(unsigned long long)(s->ms_x1000/1000),(unsigned long long)(s->ms_x1000%1000),s->tid,where,s->in_syscall?"s":"-");
                 }
                 for (int d=0; d<GP_DEPTH; ++d) fprintf(out," %#llx",(unsigned long long)s->ret[d]);
                 for (int d=0; d<GP_HOST && s->host[d]; ++d) {
-                    Dl_info hi;
-                    if (dladdr((void *)(uintptr_t)s->host[d],&hi) && hi.dli_sname) fprintf(out," @%s",hi.dli_sname);
-                    else fprintf(out," @?%#llx",(unsigned long long)(s->host[d]-(uintptr_t)(hi.dli_fbase)));
+                    const GpSym *sym=gp_symbol(s->host[d]);
+                    if (sym->name) fprintf(out," @%s",sym->name);
+                    else fprintf(out," @?%#llx",(unsigned long long)s->host[d]);
                 }
                 fputc('\n',out);
             }
