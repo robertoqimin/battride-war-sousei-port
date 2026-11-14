@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-only
 """Launcher back end: the user's dump, the prepared game, the settings file and the game command.
 
 Kept free of GTK so it can be checked from the command line (launcher.py --check/--prepare).

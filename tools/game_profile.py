@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-only
 # kr-port: reads a KR_GAME_PROFILE sample file and reports, per thread, where the time goes:
 # the game's own code (by function), the port's runtime (by the import the game called), or blocked
 # in the kernel. Busy windows (1 s) of the main thread are reported on their own.

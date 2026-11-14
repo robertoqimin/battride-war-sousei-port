@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-only
 # Builds the merged game view the port runs from: a tree of symbolic links to YOUR dump of the
 # base game (CUSA02716 v01.00) with the update (v01.02) on top. Nothing is copied or modified.
 # Usage: tools/make_game_view.sh <base-dump-dir> <patch-dump-dir> [<out-dir>=./game]

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-only
 """Builds the launcher AppImage: the launcher, the built port (bb-probe, libbbgpu.so), the game
 preparation scripts, and the Python + GTK 4 + libadwaita they run on, with every library they
 need except the ones that must be the host's (libc, Vulkan and GL drivers, X11/Wayland).

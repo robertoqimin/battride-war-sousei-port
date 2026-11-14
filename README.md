@@ -142,14 +142,16 @@ tools/bench/bench.sh my_run [VAR=value ...]   # fixed automated route → out/be
 
 ```
 port/      runtime + GPU layer (fork of bbport; GPL-2.0-or-later)
-tools/     launcher, game view, imports, benchmark and automated routes (MIT)
-ghidra/    scripts to recreate the executable analysis from YOUR dump (MIT)
-docs/      game map, roadmap and per-step reports, in Portuguese (MIT)
+tools/     launcher, game view, imports, benchmark and automated routes (GPL-2.0-only)
+ghidra/    scripts to recreate the executable analysis from YOUR dump (GPL-2.0-only)
+docs/      game map, roadmap and per-step reports, in Portuguese (GPL-2.0-only)
 ```
 
 ## License
 
-- Files **outside `port/`** are under the **MIT** license ([LICENSE](LICENSE)).
+Copyright (c) 2026 robertoqimin and the battride-war-sousei-port contributors.
+
+- Files **outside `port/`** are under the **GNU General Public License version 2 only (GPL-2.0-only)** ([LICENSE](LICENSE)).
 - The **`port/`** directory stays under **GPL-2.0-or-later** ([port/LICENSE](port/LICENSE)), like the bbport and shadPS4 code it comes from. Some parts carry other licenses, stated in their own files.
 - The compiled program (`bb-probe`) is distributed under the GPL.
 

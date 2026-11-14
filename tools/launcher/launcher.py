@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-only
 """Battride War Genesis launcher: points the port at your dump, prepares it once and starts the game.
 
 Based on the launcher of battride-war-recomp (same layout: Game, Settings, Keyboard, Controller, Log).

@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-only
 # Adds the launcher to the desktop's application menu (~/.local/share/applications). The icon is
 # the game's own icon0.png from your dump, used where it is (not copied).
 # Usage: tools/launcher/install-desktop.sh [--remove]

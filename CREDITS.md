@@ -48,7 +48,7 @@ Used at build time: SDL3 (zlib), Vulkan, Vulkan Memory Allocator and xbyak.
   - the game's control layout;
   - the hash-based rwlock registry;
   - the benchmark tooling.
-- Files outside `port/` are under the **MIT** license (`LICENSE`). Inside `port/`, **GPL-2.0-or-later** applies (`port/LICENSE`).
+- Files outside `port/` are under **GPL-2.0-only** (`LICENSE`). Inside `port/`, **GPL-2.0-or-later** applies (`port/LICENSE`).
 
 ## The game
 *Kamen Rider: Battride War Genesis* (仮面ライダー バトライド・ウォー 創生) © Bandai Namco Entertainment, © Ishimori Productions / Toei. This project is **not** affiliated with Bandai Namco, Toei or Sony Interactive Entertainment and contains **no** game code or data.
