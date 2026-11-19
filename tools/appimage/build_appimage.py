@@ -55,14 +55,24 @@ def sha(path):
     return h.hexdigest()
 
 
+# Every file taken from the build system (not from this repository), for the corresponding
+# source of the release (tools/appimage/collect_sources.py reads app/system-files.txt).
+system_files = set()
+
+
 def copy(src, dst):
+    if not str(Path(src).resolve()).startswith(str(REPO) + os.sep):
+        system_files.add(str(Path(src).resolve()))
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     dst.chmod(dst.stat().st_mode | 0o200)   # writable: patchelf and strip change the copies
 
 
 def copytree(src, dst, **kw):
-    shutil.copytree(src, dst, symlinks=False, **kw)
+    def copy_file(a, b):
+        system_files.add(str(Path(a).resolve()))
+        return shutil.copy2(a, b)
+    shutil.copytree(src, dst, symlinks=False, copy_function=copy_file, **kw)
 
 
 # Libraries that must match the host's GPU driver and system: never shipped (as in
@@ -182,6 +192,7 @@ glibc = subprocess.check_output(['getconf', 'GNU_LIBC_VERSION'], text=True).stri
     'bb_probe_sha256': sha(PROBE), 'libbbgpu_sha256': sha(GPU_LIB), 'runtime_sha256': sha(RUNTIME),
     'unresolved': sorted(missing)}, indent=2))
 (S / 'app' / 'library-sources.json').write_text(json.dumps(sources, indent=2, sort_keys=True))
+(S / 'app' / 'system-files.txt').write_text(''.join(p + '\n' for p in sorted(system_files)))
 
 # --- AppRun, desktop entry, icon ----------------------------------------------------------
 (S / 'AppRun').write_text('''#!/bin/sh
