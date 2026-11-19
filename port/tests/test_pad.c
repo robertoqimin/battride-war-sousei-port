@@ -56,11 +56,18 @@ int main(void) {
     /* Only the virtual test controller is a gamepad, whatever is plugged in. */
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT,"0x1d50/0x6189");
     assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_GAMEPAD));
-    /* The keyboard defaults: Escape the menu, R2 a Shift chord on the left button. */
+    /* The keyboard defaults (the game's own layout): Escape the menu, the left button the normal
+     * attack (□), R the super special (R2), Tab the TAG switch (R1), F both buttons of special 3. */
     bind_defaults();
     assert(bindings[IN_OPTIONS].keys[0]==SDL_SCANCODE_ESCAPE && bindings[IN_OPTIONS].mods[0]<0);
-    assert(bindings[IN_R2].keys[0]==MOUSE_KEY+SDL_BUTTON_LEFT && bindings[IN_R2].mods[0]==SDL_SCANCODE_LSHIFT);
-    assert(bindings[IN_R1].keys[0]==MOUSE_KEY+SDL_BUTTON_LEFT && bindings[IN_R1].mods[0]<0);
+    assert(bindings[IN_SQUARE].keys[0]==MOUSE_KEY+SDL_BUTTON_LEFT && bindings[IN_SQUARE].mods[0]<0);
+    assert(bindings[IN_R2].keys[0]==SDL_SCANCODE_R && bindings[IN_R2].mods[0]<0);
+    assert(bindings[IN_R1].keys[0]==SDL_SCANCODE_TAB && bindings[IN_R1].mods[0]<0);
+    {
+        bool keys[SDL_SCANCODE_COUNT]={0};
+        keys[SDL_SCANCODE_F]=true;
+        assert(key_down(keys,IN_TRIANGLE) && key_down(keys,IN_CIRCLE));
+    }
     /* A chord on the keyboard: C alone is R3, Ctrl+C is L3 and not R3 too. */
     load_bindings();
     assert(bindings[IN_L3].key_count==2 && bindings[IN_L3].keys[0]==SDL_SCANCODE_C &&
