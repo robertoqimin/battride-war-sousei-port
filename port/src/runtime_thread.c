@@ -693,8 +693,6 @@ static ABI __attribute__((noreturn)) void thread_exit(void *value) {
     /* No host unwinder: guest frames have no registered FDEs. */
     longjmp(t->exit_jump,1);
 }
-/* pthread_exit for the online module's threads (gpu/bbnet20). */
-__attribute__((noreturn)) void runtime_thread_exit(void *value) { thread_exit(value); }
 /* kr-port: the game starts a thread per streamed sound ("update ngs2 stream sound") that polls its
  * voice in a loop (eboot 0x2d74c0, the stream object in rbx):
  *     while (state != 5) { update(); scePthreadYield(); }      state at object+0xc
@@ -863,23 +861,12 @@ static ABI int32_t posix_create(GuestThread **t,ThreadAttr **a,GuestEntry e,void
 static ABI int32_t posix_create_name(GuestThread **t,ThreadAttr **a,GuestEntry e,void *arg,const char *name) { return posix(create(t,a,e,arg,name)); }
 static ABI int32_t posix_join(GuestThread *t,void **r) { return posix(thread_join(t,r)); }
 
-int32_t runtime_thread_spawn(void **out,void *(ABI *entry)(void *),void *argument,uint64_t stack,const char *name) {
-    ThreadAttr *attr=NULL;
-    int32_t r=attr_init(&attr);
-    if (!r && stack) r=attr_set_stack(&attr,stack);
-    if (!r) r=create((GuestThread **)out,&attr,entry,argument,name);
-    if (attr) attr_destroy(&attr);
-    return posix(r);
-}
 /* kr-port: scePthreadCancel. Deferred cancellation is not implemented: the request is logged
  * and the thread keeps running (games normally cancel only workers they are tearing down). */
 static ABI int32_t thread_cancel(GuestThread *t) {
     if (!find_thread(t)) return ERR(3);
     fprintf(stderr,"Runtime: scePthreadCancel('%s') ignored (no deferred cancellation)\n",t->name);
     return 0;
-}
-int32_t runtime_thread_join_spawned(void *thread,void **result) {
-    return posix(thread_join((GuestThread *)thread,result));
 }
 
 uintptr_t runtime_thread_resolve(const char *name) {

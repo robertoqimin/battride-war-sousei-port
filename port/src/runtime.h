@@ -108,16 +108,10 @@ uintptr_t runtime_file_resolve(const char *name);
 uintptr_t runtime_services_resolve(const char *name);
 /* Online play (runtime_net.c, BB_ONLINE=1): the online module answers the network and PSN imports. */
 void runtime_net_configure(const char *app0, const char *serial, const char *title, const char *version);
-int runtime_net_enabled(void);
-int runtime_net_symbol(const char *symbol);
 uintptr_t runtime_net_resolve(const char *name);
 void runtime_net_image_ready(uintptr_t base, uint64_t size);
 void runtime_net_image_mapped(uint8_t *image, uint64_t size);
 void runtime_net_start(void);
-__attribute__((noreturn)) void runtime_thread_exit(void *value);
-/* Guest threads for host code (the online module's NP threads); 0 or a positive errno value. */
-int32_t runtime_thread_spawn(void **thread, void *(ABI *entry)(void *), void *argument, uint64_t stack, const char *name);
-int32_t runtime_thread_join_spawned(void *thread, void **result);
 void runtime_file_report(void);
 void runtime_file_configure(const char *app0, const char *user);
 int runtime_file_mount(const char *guest, const char *host);
@@ -126,12 +120,6 @@ int runtime_file_translate(const char *guest, char *out, size_t size);
 int64_t runtime_file_open(const char *path, int flags, int mode);
 int64_t runtime_file_close(int fd);
 int64_t runtime_file_read(int fd, void *buffer, uint64_t size);
-int64_t runtime_file_pread(int fd, void *buffer, uint64_t size, int64_t offset);
-int64_t runtime_file_write(int fd, const void *buffer, uint64_t size);
-int64_t runtime_file_lseek(int fd, int64_t offset, int whence);
-int64_t runtime_file_stat(const char *path, void *guest_stat);
-int64_t runtime_file_fstat(int fd, void *guest_stat);
-int64_t runtime_file_getdents(int fd, char *buffer, uint64_t size, int64_t *base);
 void runtime_thread_keys_cleanup(void);
 /* Guest-visible errno values are FreeBSD's. */
 int32_t runtime_guest_errno(int host_errno);
@@ -154,8 +142,6 @@ int runtime_file_host_path(const char *guest,char *out,size_t size);
 void runtime_remote_configure(const char *app0);
 int runtime_remote_fetch(const char *host);
 int runtime_remote_size(const char *host,int64_t *size);
-/* The character save the game uses: its slot (userdataNNNN, 0..9) and host folder; -1 before any. */
-int runtime_savedata_active_slot(char *dir, size_t size);
 void runtime_savedata_configure(const char *title);
 uintptr_t runtime_savedata_resolve(const char *name);
 void runtime_savedata_report(void);

@@ -6,7 +6,6 @@
 #include <utility>
 
 #include "common/thread.h"
-#include "bbport_frame_rate.h"
 #include "common/assert.h"
 #include "common/elf_info.h"
 #include "common/logging/log.h"
@@ -140,9 +139,7 @@ s32 PS4_SYSV_ABI sceVideoOutSetFlipRate(s32 handle, s32 rate) {
     if (!port) {
         return ErrorInvalidHandle;
     }
-    // With the frame rate free (bbport_frame_rate) a frame is shown as soon as it comes; the
-    // game asks for every second vblank (30 FPS).
-    port->flip_rate = BbFrameRate::Unlocked() ? 0 : rate;
+    port->flip_rate = rate;
     // BB_FLIP_RATE=n: the rate asked for is replaced (0: every vblank; games without frame rate
     // hooks, e.g. 60 FPS where a game asks for 30).
     if (const char* forced = bb_env("BB_FLIP_RATE"); forced && *forced) {

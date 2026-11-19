@@ -3,9 +3,6 @@
 #include "bbport_affinity.h"
 #include "shim/bb_env.h"
 #include "bbport_write_log.h"
-#include "bbport_frame_rate.h"
-#include "bbport_game_menu.h"
-#include "bbport_gnm_hooks.h"
 // bbport: glue between the C loader and the vendored shadPS4 video core.
 #include "bbport_overlay.h"
 #include "bbport_guest_hooks.h"
@@ -348,13 +345,6 @@ extern "C" int bbgpu_handle_fault(void* ucontext, void* address) {
         return 1;
     }
     return BbFreeCheck::OnStaleTrapFault(reinterpret_cast<std::uint64_t>(address)) ? 1 : 0;
-}
-
-extern "C" void bbgpu_patch_image(unsigned char* image, uint64_t size) {
-    // kr-port: these three patch Bloodborne's eboot at fixed offsets (its Gnm wrappers, its
-    // System menu, its frame pacer). This game's code is elsewhere: none of them applies.
-    (void)image;
-    (void)size;
 }
 
 extern "C" unsigned bbgpu_symbol_count(void) {

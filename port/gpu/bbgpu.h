@@ -99,8 +99,6 @@ int bbgpu_import_shader_recipes(const char *cache_dir, const char *pack, const c
 int bbgpu_free_camera(void);
 /* The game's current camera state (its projection parameters at +0x50), 0 until known. */
 uint64_t bbgpu_camera_state(void);
-/* Patches the loaded image before the game runs (image still writable): libGnm entry hooks. */
-void bbgpu_patch_image(unsigned char *image, uint64_t size);
 /* Number of symbols registered by the vendored libraries (diagnostics). */
 unsigned bbgpu_symbol_count(void);
 #ifdef __cplusplus

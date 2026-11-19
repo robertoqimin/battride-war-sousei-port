@@ -240,8 +240,6 @@ void Submit(u32 count, const u32* const* dcbs, const u32* dcb_sizes, const u32* 
     for (u32 i = 0; i < count; ++i) {
         const std::span dcb{dcbs[i], dcb_sizes[i] / 4};
         const std::span ccb{ccbs ? ccbs[i] : nullptr, ccb_sizes ? ccb_sizes[i] / 4 : 0};
-        BbGnmHooks::CheckSubmission(dcb.data(), dcb.size());
-        BbGnmHooks::CheckSubmission(ccb.data(), ccb.size());
         liverpool->SubmitGfx(dcb, ccb);
     }
 }

@@ -13,7 +13,6 @@
 
 #include <vk_mem_alloc.h>
 
-#include "bbport_game_menu.h"
 #include "bbport_overlay.h"
 #include "bbport_timeline.h"
 #include "bbport_toggles.h"
@@ -642,7 +641,6 @@ void Presenter::RecordPresent(vk::CommandBuffer cmdbuf, const Frame* frame, vk::
     }
 
     // The port's menu and FPS counter over the frame, at display resolution.
-    BbGameMenu::Poll();
     const bool overlay = BbOverlay::Visible();
     const vk::ImageMemoryBarrier2 after_transfer{
         .srcStageMask = vk::PipelineStageFlagBits2::eAllTransfer,

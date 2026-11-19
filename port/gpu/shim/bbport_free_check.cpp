@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include "bbport_guest_code_hooks.h"
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -843,7 +842,7 @@ bool PatchInt3(u64 address, std::initializer_list<unsigned char> expected) {
     }
     __atomic_store_n(reinterpret_cast<unsigned char*>(address), static_cast<unsigned char>(0xcc),
                      __ATOMIC_SEQ_CST);
-    mprotect(page, PageSize, Core::GuestCodeProtection());
+    mprotect(page, PageSize, PROT_READ | PROT_EXEC);
     return true;
 }
 

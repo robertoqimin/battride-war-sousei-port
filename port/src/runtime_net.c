@@ -8,8 +8,6 @@
 void runtime_net_configure(const char *app0, const char *serial, const char *title, const char *version) {
     (void)app0; (void)serial; (void)title; (void)version;
 }
-int runtime_net_enabled(void) { return 0; }
-int runtime_net_symbol(const char *symbol) { (void)symbol; return 0; }
 uintptr_t runtime_net_resolve(const char *name) { (void)name; return 0; }
 void runtime_net_image_ready(uintptr_t base, uint64_t size) { (void)base; (void)size; }
 void runtime_net_image_mapped(uint8_t *image, uint64_t size) { (void)image; (void)size; }

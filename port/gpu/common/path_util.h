@@ -32,19 +32,10 @@ enum class PathType {
     CustomModulesDir,
 };
 
-/// Not empty and not longer than the system allows.
-[[nodiscard]] bool ValidatePath(const std::filesystem::path& path);
 [[nodiscard]] std::string PathToUTF8String(const std::filesystem::path& path);
 
 /// The folder of `type` (created now if it is not there).
 [[nodiscard]] const std::filesystem::path& GetUserPath(PathType type);
 [[nodiscard]] std::string GetUserPathString(PathType type);
-/// Points `type` at another existing folder.
-void SetUserPath(PathType type, const std::filesystem::path& path);
-
-/// The eboot.bin of an unpacked game `game_id` (folder name) under `dir`, `max_depth` levels down.
-[[nodiscard]] std::optional<std::filesystem::path> FindGameByID(const std::filesystem::path& dir,
-                                                                const std::string& game_id,
-                                                                int max_depth);
 
 } // namespace Common::FS

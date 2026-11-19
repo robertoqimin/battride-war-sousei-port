@@ -25,7 +25,6 @@
 #include <SDL3/SDL.h>
 #include <fmt/format.h>
 #include "bbport_guest_hooks.h"
-#include "bbport_frame_rate.h"
 #include "bbport_settings.h"
 #include "imgui.h"
 #include "imgui_impl_vulkan.h"
