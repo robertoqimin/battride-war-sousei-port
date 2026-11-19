@@ -22,6 +22,12 @@ mkdir -p "$repo/out/appimage" "$repo/out/portable-build"
 docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
     -v "$repo:/src:ro" -v "$tools:/tools:ro" -v "$repo/out/appimage:/output" -v "$repo/out/portable-build:/tmp/build" \
     "$image" bash -euc '
+        # A fresh copy of the sources (files deleted from the checkout must not linger); the
+        # build folder (port/out) stays for faster rebuilds.
+        find /tmp/build -mindepth 1 -maxdepth 1 ! -name port -exec rm -rf {} +
+        if [[ -d /tmp/build/port ]]; then
+            find /tmp/build/port -mindepth 1 -maxdepth 1 ! -name out -exec rm -rf {} +
+        fi
         cd /src
         tar --exclude=./out --exclude=./port/out --exclude=./port/pgo --exclude=./game --exclude=./user \
             -cf - . | tar -xf - -C /tmp/build
