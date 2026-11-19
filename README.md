@@ -16,19 +16,23 @@ The project is a fork of [bbport](https://github.com/deadinside28/bloodborne_pc)
 
 ## Status
 
-**Experimental, playable.** Tested on an AMD RX 6750 XT (Mesa/RADV, Linux).
+**Version 0.1.0: experimental, playable.** Tested on Linux with an AMD RX 6750 XT (Mesa/RADV) and an NVIDIA GTX 1650 (proprietary driver). See [CHANGELOG.md](CHANGELOG.md).
 
 | Area | Status |
 |---|---|
 | Boot, menus, movies, saves | ✅ |
 | Story Mode, tutorial, combat | ✅ (validated through the first missions) |
 | **60 FPS gameplay** | ✅ default (the original caps at 30); game speed verified |
+| Higher frame rates (up to 240), VSync on/off | ✅ |
+| Anti-aliasing (SMAA, FXAA), FSR 1 upscaling | ✅ the HUD stays sharp with anti-aliasing |
 | Smoothness | ✅ 100% of combat frames at 16.7 ms on the benchmark route |
 | Audio (BGM, effects, voices; ATRAC9 via Ngs2) | ✅ no reverb, envelope or mastering yet |
 | Gamepad (DualShock, DualSense, Xbox via SDL) | ✅ |
 | Keyboard and mouse with the game's own layout | ✅ |
 | C++ exceptions (the game's own libc unwinder) | ✅ every system import the game needs is implemented |
 | Online (leaderboards etc.) | ❌ reports "signed out" |
+| DLSS, FSR 2/3 | ❌ not implemented |
+| Not yet played through | final boss, ending and credits, Time Survival, Free Mission, galleries |
 | Windows / Steam Deck | untested |
 
 Step-by-step development reports (in Portuguese) are in [`docs/relatorios/`](docs/relatorios/). The screenshots they mention are **not published**, because they are game content.
@@ -98,7 +102,7 @@ it is (`game/`, `out/` and your saves in `user/`).
 
 #### The launcher as an AppImage
 ```sh
-tools/appimage/build_appimage.py --tools ~/tools/appimage   # -> out/appimage/BattrideWarGenesis-x86_64.AppImage
+tools/appimage/build_appimage.py --tools ~/tools/appimage   # -> out/appimage/BattrideWarGenesis-0.1.0-x86_64.AppImage
 ```
 `--tools` holds `appimagetool-x86_64.AppImage` (1.9.0), `runtime-x86_64` (AppImage type 2) and a static
 `patchelf` (0.18.0). The AppImage carries the launcher, the built port and the Python + GTK 4 +
@@ -154,6 +158,17 @@ This is a Japanese release: **○ confirms and ✕ goes back.**
 | Pause / next page | OPTIONS | Esc |
 
 ---
+
+## Performance
+
+Measured in 60 s of combat (render size → average FPS with no frame-rate cap):
+
+| GPU | 720p | 1080p | 1440p | 4K |
+|---|---|---|---|---|
+| NVIDIA GTX 1650 4 GB | 139 | 98 (SMAA: 89) | 72 | — |
+| AMD RX 6750 XT | — | — | holds 60 | 43–55 |
+
+SMAA or FXAA cost about 1 ms per frame on the GTX 1650; FSR 1 to 1820×1024 about 1.8 ms (720p + FSR 1: 111 FPS).
 
 ## Benchmark
 

@@ -32,6 +32,7 @@ else:
     GPU_LIB = PORT / 'out' / 'gpu' / 'libbbgpu.so'
     SCRIPTS = PORT / 'scripts'
     CREDITS = REPO / 'CREDITS.md'
+VERSION = '0.1.0'  # this port's release (tools/appimage reads it from here)
 TITLE_ID = 'CUSA02716'
 UPDATE_VERSION = '01.02'
 APP_ID = 'battride-war-sousei-port'

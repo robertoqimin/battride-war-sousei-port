@@ -57,6 +57,7 @@ def cli(args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--version', action='version', version='%(prog)s ' + core.VERSION)
     ap.add_argument('--check', action='store_true', help='check the dump and the build, then exit')
     ap.add_argument('--prepare', action='store_true', help='check, prepare the game if needed, then exit')
     ap.add_argument('--base', help='base game dump folder (overrides the saved one)')
@@ -638,6 +639,7 @@ def main():
             text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
             text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
             text = re.sub(r'^#+ ', '', text, flags=re.M)
+            text = 'Version %s\n\n%s' % (core.VERSION, text)
             text += '\nSource code: https://github.com/robertoqimin/battride-war-sousei-port\n'
             view.get_buffer().set_text(text)
             dialog.set_child(Gtk.ScrolledWindow(child=view, vexpand=True))

@@ -26,9 +26,10 @@ import sysconfig
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
+VERSION = re.search(r"^VERSION = '([^']+)'", (REPO / 'tools' / 'launcher' / 'core.py').read_text(), re.M).group(1)
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument('--tools', type=Path, required=True)
-ap.add_argument('--output', type=Path, default=REPO / 'out' / 'appimage' / 'BattrideWarGenesis-x86_64.AppImage')
+ap.add_argument('--output', type=Path, default=REPO / 'out' / 'appimage' / 'BattrideWarGenesis-%s-x86_64.AppImage' % VERSION)
 ap.add_argument('--stage', type=Path, default=REPO / 'out' / 'appimage' / 'AppDir')
 args = ap.parse_args()
 S = args.stage.resolve()
@@ -172,7 +173,7 @@ for so in libdir.iterdir():
 
 glibc = subprocess.check_output(['getconf', 'GNU_LIBC_VERSION'], text=True).strip()
 (S / 'app' / 'package.json').write_text(json.dumps({
-    'glibc_min': glibc.split()[-1], 'python': version, 'libraries': len(sources),
+    'version': VERSION, 'glibc_min': glibc.split()[-1], 'python': version, 'libraries': len(sources),
     'bb_probe_sha256': sha(PROBE), 'libbbgpu_sha256': sha(GPU_LIB), 'runtime_sha256': sha(RUNTIME),
     'unresolved': sorted(missing)}, indent=2))
 (S / 'app' / 'library-sources.json').write_text(json.dumps(sources, indent=2, sort_keys=True))
@@ -192,7 +193,7 @@ exec "$APPDIR/usr/bin/python3" "$APPDIR/app/launcher.py" "$@"
 (S / 'battride-war-genesis.desktop').write_text(
     '[Desktop Entry]\nType=Application\nName=Kamen Rider: Battride War Genesis\n'
     'Comment=Native PC port (your own PS4 dump)\nExec=AppRun\nIcon=battride-war-genesis\nCategories=Game;\n'
-    'Terminal=false\n')
+    'Terminal=false\nX-AppImage-Version=%s\n' % VERSION)
 # Our own icon (the game's is Bandai Namco's and is not shipped).
 (S / 'battride-war-genesis.svg').write_text(
     '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" rx="48" '
