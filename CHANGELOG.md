@@ -12,7 +12,8 @@ It runs from your own dump of the game and its update; no game files are include
 - Gamepads through SDL (DualShock, DualSense, Xbox), and keyboard and mouse with the game's own layout.
 - The game's C++ exceptions, through its own libc unwinder.
 - A desktop launcher (GTK 4 + libadwaita) that checks your dump, prepares the game and sets the
-  window, render size, frame rate, graphics options and controls; also packaged as an AppImage.
+  window, render size, frame rate, graphics options and controls; also packaged as an AppImage
+  that runs on Ubuntu 22.04 (glibc 2.35) and newer distributions.
 
 ### Graphics options
 - Render size from 720p to 4K or any size (`KR_RES`); above the window's size the frame is

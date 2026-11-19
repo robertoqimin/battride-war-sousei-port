@@ -29,7 +29,7 @@ REPO = Path(__file__).resolve().parents[2]
 VERSION = re.search(r"^VERSION = '([^']+)'", (REPO / 'tools' / 'launcher' / 'core.py').read_text(), re.M).group(1)
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument('--tools', type=Path, required=True)
-ap.add_argument('--output', type=Path, default=REPO / 'out' / 'appimage' / 'BattrideWarGenesis-%s-x86_64.AppImage' % VERSION)
+ap.add_argument('--output', type=Path, default=REPO / 'out' / 'appimage' / ('BattrideWarGenesis-%s-x86_64.AppImage' % VERSION))
 ap.add_argument('--stage', type=Path, default=REPO / 'out' / 'appimage' / 'AppDir')
 args = ap.parse_args()
 S = args.stage.resolve()
@@ -76,7 +76,8 @@ def host_library(name):
         'libX11.so', 'libX11-xcb', 'libXau', 'libXdmcp', 'libXext', 'libXfixes', 'libXxf86vm', 'libxshmfence',
         'libxcb.so', 'libxcb-dri2', 'libxcb-dri3', 'libxcb-present', 'libxcb-sync', 'libxcb-xfixes',
         'libxcb-randr', 'libxcb-shm', 'libxcb-glx', 'libwayland-client', 'libwayland-server', 'libwayland-egl',
-        'libsystemd', 'libva', 'libvdpau', 'libOpenCL'))
+        'libsystemd', 'libva', 'libvdpau', 'libOpenCL',
+        'libxkbcommon'))  # reads the system's keyboard data: an old copy warns on newer files
 
 
 print('Staging', S, flush=True)
@@ -108,7 +109,10 @@ copytree(sysconfig.get_path('stdlib'), pylib,
 for module in ('gi', 'cairo'):
     found = next(Path(p) / module for p in sys.path if (Path(p) / module).is_dir())
     copytree(found, pylib / 'site-packages' / module, ignore=shutil.ignore_patterns('__pycache__'))
-typelibs = Path('/usr/lib/girepository-1.0')
+# Arch keeps libraries in /usr/lib, Debian and Ubuntu in /usr/lib/<multiarch>.
+LIB_DIRS = [Path('/usr/lib')] + ([Path('/usr/lib') / sysconfig.get_config_var('MULTIARCH')]
+                                 if sysconfig.get_config_var('MULTIARCH') else [])
+typelibs = next(d / 'girepository-1.0' for d in reversed(LIB_DIRS) if (d / 'girepository-1.0').is_dir())
 wanted = ('Adw-1', 'cairo-1.0', 'freetype2-2.0', 'Gdk-4.0', 'GdkPixbuf-2.0', 'Gio-2.0', 'GioUnix-2.0', 'GLib-2.0',
           'GLibUnix-2.0', 'GModule-2.0', 'GObject-2.0', 'Graphene-1.0', 'Gsk-4.0', 'Gtk-4.0', 'HarfBuzz-0.0',
           'Pango-1.0', 'PangoCairo-1.0', 'PangoFc-1.0', 'PangoFT2-1.0', 'PangoOT-1.0', 'fontconfig-2.0',
@@ -123,7 +127,8 @@ libdir = S / 'usr' / 'lib'
 seeds = []
 for pattern in ('libgtk-4.so.1', 'libadwaita-1.so.0', 'libgraphene-1.0.so.0', 'libpangocairo-1.0.so.0',
                 'libpangoft2-1.0.so.0'):
-    seeds.extend(Path('/usr/lib').glob(pattern))
+    for lib_dir in LIB_DIRS:
+        seeds.extend(lib_dir.glob(pattern))
 queue = seeds + [p for p in S.rglob('*') if p.is_file() and not p.is_symlink()]
 seen, sources, missing = set(), {}, set()
 while queue:

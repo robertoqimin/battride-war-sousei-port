@@ -107,8 +107,12 @@ tools/appimage/build_appimage.py --tools ~/tools/appimage   # -> out/appimage/Ba
 `--tools` holds `appimagetool-x86_64.AppImage` (1.9.0), `runtime-x86_64` (AppImage type 2) and a static
 `patchelf` (0.18.0). The AppImage carries the launcher, the built port and the Python + GTK 4 +
 libadwaita they need; no game code or data. It runs on systems whose glibc is at least the build
-system's (built on a rolling distribution it needs a recent one; build inside an older one, such as
-Ubuntu 22.04, for wider reach). The data folder defaults to `~/.local/share/battride-war-sousei-port`.
+system's, so one built on a rolling distribution needs a recent one. For the release build, which
+runs on Ubuntu 22.04 (glibc 2.35) and newer, build it inside Ubuntu 22.04 with Docker:
+```sh
+tools/appimage/build_portable.sh --tools ~/tools/appimage   # needs the xbyak/VMA folder from step 1
+```
+The data folder defaults to `~/.local/share/battride-war-sousei-port`.
 
 ### 5. Or play from the terminal
 ```sh
