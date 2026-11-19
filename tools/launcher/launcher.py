@@ -137,28 +137,36 @@ def main():
             self.log_current = None
             self.lockable = []
             self.win = Adw.ApplicationWindow(application=app, title=APP_TITLE)
-            self.win.set_default_size(880, 780)
+            self.win.set_default_size(1040, 780)
             self.win.connect('close-request', self.close)
 
             header = Adw.HeaderBar()
+            header.set_title_widget(Adw.WindowTitle(title=APP_TITLE))
             self.stack = Adw.ViewStack()
-            title = Adw.ViewSwitcherTitle(stack=self.stack, title=APP_TITLE)
-            header.set_title_widget(title)
             self.launch = Gtk.Button()
             self.launch.connect('clicked', self.on_launch)
             header.pack_end(self.launch)
             header.pack_start(flat_button('help-about-symbolic', 'Credits & licenses', self.show_credits))
-            bottom = Adw.ViewSwitcherBar(stack=self.stack)
-            title.connect('notify::title-visible', lambda t, _: bottom.set_reveal(t.get_title_visible()))
 
-            self.stack.add_titled(self.build_game_page(), 'game', 'Game').set_icon_name('applications-games-symbolic')
-            self.stack.add_titled(self.build_settings_page(), 'settings', 'Settings').set_icon_name(
-                'preferences-system-symbolic')
-            self.stack.add_titled(self.build_keys_page(), 'keyboard', 'Keyboard').set_icon_name(
-                'input-keyboard-symbolic')
-            self.stack.add_titled(self.build_pad_page(), 'controller', 'Controller').set_icon_name(
-                'input-gaming-symbolic')
-            self.stack.add_titled(self.build_log_page(), 'log', 'Log').set_icon_name('utilities-terminal-symbolic')
+            pages = (('game', 'Game', 'applications-games-symbolic', self.build_game_page),
+                     ('settings', 'Settings', 'preferences-system-symbolic', self.build_settings_page),
+                     ('keyboard', 'Keyboard', 'input-keyboard-symbolic', self.build_keys_page),
+                     ('controller', 'Controller', 'input-gaming-symbolic', self.build_pad_page),
+                     ('log', 'Log', 'utilities-terminal-symbolic', self.build_log_page))
+            # The pages on the left (a plain list: the AppImage's libadwaita 1.1 has no split views).
+            self.sidebar = Gtk.ListBox(selection_mode=Gtk.SelectionMode.BROWSE, width_request=190)
+            self.sidebar.add_css_class('navigation-sidebar')
+            for name, label, icon, build in pages:
+                self.stack.add_titled(build(), name, label).set_icon_name(icon)
+                item = Gtk.Box(spacing=12, margin_start=6, margin_end=6, margin_top=6, margin_bottom=6)
+                item.append(Gtk.Image(icon_name=icon))
+                item.append(Gtk.Label(label=label, xalign=0))
+                row = Gtk.ListBoxRow(child=item)
+                row.page = name
+                self.sidebar.append(row)
+            self.sidebar.connect('row-selected',
+                                 lambda _, row: row and self.stack.set_visible_child_name(row.page))
+            self.stack.connect('notify::visible-child-name', lambda *_: self.sync_sidebar())
 
             status = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_start=18, margin_end=18,
                              margin_top=10, margin_bottom=12)
@@ -171,16 +179,31 @@ def main():
             for widget in (self.progress, self.status, self.stats):
                 status.append(widget)
 
-            self.toasts = Adw.ToastOverlay(child=self.stack, vexpand=True)
+            self.toasts = Adw.ToastOverlay(child=self.stack, hexpand=True)
+            body = Gtk.Box(vexpand=True)
+            for widget in (self.sidebar, Gtk.Separator(orientation=Gtk.Orientation.VERTICAL), self.toasts):
+                body.append(widget)
             content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-            for widget in (header, self.toasts, Gtk.Separator(), status, bottom):
+            for widget in (header, body, Gtk.Separator(), status):
                 content.append(widget)
             self.win.set_content(content)
             self.stack.set_visible_child_name(args.page)
+            self.sync_sidebar()
             self.update_launch()
             GLib.timeout_add(1000, self.tick)
             GLib.timeout_add(300, self.follow_logs)
             self.win.present()
+
+        def sync_sidebar(self):
+            """Selects the sidebar row of the page shown (also when the code switches pages)."""
+            name = self.stack.get_visible_child_name()
+            row = self.sidebar.get_first_child()
+            while row:
+                if getattr(row, 'page', None) == name:
+                    if self.sidebar.get_selected_row() is not row:
+                        self.sidebar.select_row(row)
+                    return
+                row = row.get_next_sibling()
 
         # --- Game page -------------------------------------------------------------------
         def build_game_page(self):
