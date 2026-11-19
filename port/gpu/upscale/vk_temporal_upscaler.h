@@ -119,6 +119,9 @@ public:
     /// A pass's first color target: the last render-size RGBA8 target before the UI is the
     /// game's finished frame.
     void OnColorTarget(VideoCore::ImageId color);
+    /// kr-port: every draw's first color target and depth (any number of targets), before its
+    /// rendering begins: anti-aliasing of this game's scene when its pass ends.
+    void SceneEndAntiAliasing(VideoCore::ImageId color, VideoCore::ImageId depth);
 
     struct Target {
         vk::ImageView view;
@@ -195,7 +198,7 @@ private:
     [[nodiscard]] bool SmaaWanted() const;
     /// SMAA of the finished scene `color` (RGBA8; `proxy`: of its proxy, at render_width x
     /// render_height): the result's image (GENERAL), or null.
-    vk::Image RunSmaa(VideoCore::ImageId color, bool proxy = false);
+    vk::Image RunSmaa(VideoCore::ImageId color, bool proxy = false, bool fxaa = false);
     void EnsureUiResources(u32 width, u32 height, vk::Format color, vk::Format depth);
     void PrepareUiDepth(VideoCore::ImageId depth);
     /// Render size below the scaled-preset output size (the resolution patch is on).
@@ -326,6 +329,12 @@ private:
     /// anti_aliasing=smaa without an upscaler (RunSmaa); made on first use.
     std::unique_ptr<class Smaa> smaa;
     bool smaa_done = false; ///< this frame's SMAA ran at the game's own size (OnDraw)
+    /// kr-port: the image the last 3D draw went into, and whether the last draw was one (a block
+    /// of 3D draws is going on; SceneEndAntiAliasing).
+    VideoCore::ImageId kr_scene{};
+    bool kr_scene_drawn = false;
+    /// Copies `smoothed` (RGBA8, General) back into `target` (same size, RGBA8 UNORM or sRGB).
+    void CopyBack(vk::Image smoothed, VideoCore::ImageId target);
     vk::Image pending_interpolation{}; ///< OnDisplayPassStart's frame, for RunPendingInterpolation
     VAddr pending_display = 0;
     bool hudless_taken = false; ///< this frame's UI-less image went to frame generation

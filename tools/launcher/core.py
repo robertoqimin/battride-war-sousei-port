@@ -89,14 +89,24 @@ PAD_BUTTONS = [
 # ---- Display settings -----------------------------------------------------------------------
 WINDOW_MODES = [('windowed', 'Windowed'), ('borderless', 'Borderless fullscreen'),
                 ('exclusive', 'Exclusive fullscreen')]
-RENDER_SIZES = [('720p', '1280 × 720 (faster)'), ('1080p', '1920 × 1080 (the game\'s own)'),
+RENDER_SIZES = [('720p', '1280 × 720 (faster)'), ('1600x900', '1600 × 900'),
+                ('1080p', '1920 × 1080 (the game\'s own)'),
                 ('1440p', '2560 × 1440 (sharper)'), ('4k', '3840 × 2160 (sharpest, needs a strong GPU)')]
-FRAME_RATES = [('60', '60 FPS'), ('30', '30 FPS (the original)')]
+FRAME_RATES = [('60', '60 FPS'), ('30', '30 FPS (the original)'), ('screen', 'Your screen\'s refresh rate'),
+               ('120', '120 FPS'), ('144', '144 FPS'), ('165', '165 FPS'), ('240', '240 FPS (the most)')]
+# kr-port anti-aliasing of the 3D scene, before the HUD (bbport.ini anti_aliasing=).
+ANTI_ALIASING = [('off', 'Off (the game\'s own look)'), ('fxaa', 'FXAA (lighter, softer)'),
+                 ('smaa', 'SMAA (sharper)')]
+# Upscaling when the render resolution is below the window's (KR_UPSCALER).
+UPSCALERS = [('bilinear', 'Off (bilinear)'), ('fsr1', 'AMD FSR 1')]
+# The game's own frame limiter takes 30 to 240 (KR_FPS, port/src/runtime_file.c).
+FPS_MIN, FPS_MAX = 30, 240
 
 DEFAULT_SETTINGS = {
     'base': '', 'update': '', 'data': str(Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share'))
                                           / APP_ID),
-    'display': {'mode': 'windowed', 'render': '1080p', 'fps': '60', 'area_filter': True, 'show_fps': False},
+    'display': {'mode': 'windowed', 'render': '1080p', 'fps': '60', 'vsync': True, 'area_filter': True,
+                'show_fps': False, 'anti_aliasing': 'off', 'upscaler': 'bilinear'},
     'performance': {'low_core_cpu': False, 'gamemode': True, 'mangohud': False},
     'keys': {}, 'pad': {},
 }
@@ -313,19 +323,42 @@ def write_ini(data, settings):
         if isinstance(value, str) and value != default:
             lines.append('pad.%s=%s' % (name, value))
     lines.append('show_fps=%s' % ('1' if settings['display'].get('show_fps') else '0'))
+    aa = settings['display'].get('anti_aliasing', 'off')
+    lines.append('anti_aliasing=%s' % (aa if aa in [k for k, _ in ANTI_ALIASING] else 'off'))
     path = Path(data) / 'bbport.ini'
     path.write_text('\n'.join(lines) + '\n')
     return path
 
 
-def game_env(data, settings):
+def frame_rate(choice, screen_hz=None):
+    """The frame rate a Frame rate choice runs at: 'screen' is the screen's refresh rate (60 when
+    it is not known), and every value is kept within what the game's limiter takes."""
+    if choice == 'screen':
+        fps = round(screen_hz) if screen_hz and screen_hz > 0 else 60
+    else:
+        try:
+            fps = int(choice)
+        except (TypeError, ValueError):
+            fps = 60
+    return max(FPS_MIN, min(FPS_MAX, fps))
+
+
+def game_env(data, settings, screen_hz=None):
     env = dict(os.environ)
     display, perf = settings['display'], settings['performance']
     env['BB_CONFIG'] = str(write_ini(data, settings))
     env['BB_FULLSCREEN'] = {'windowed': '0', 'borderless': '1', 'exclusive': 'exclusive'}.get(display.get('mode'), '0')
     env['KR_RES'] = display.get('render', '1080p')
-    env['KR_FPS'] = str(display.get('fps', '60'))
+    fps = frame_rate(display.get('fps', '60'), screen_hz)
+    env['KR_FPS'] = str(fps)
+    # The guest's vblank must tick at least as often as the frames come, or the flips wait for it
+    # (60 Hz by default: the PS4's).
+    env['BB_VBLANK_HZ'] = str(max(60, fps))
+    # VSync on: Mailbox (no tearing, and a late frame does not halve the rate as Fifo's wait for
+    # the next refresh does, e.g. 144 -> 72 or 48 FPS on a 144 Hz screen). Off: Immediate.
+    env['BB_PRESENT_MODE'] = 'Mailbox' if display.get('vsync', True) else 'Immediate'
     env['KR_DOWNSCALE'] = '1' if display.get('area_filter', True) else '0'
+    env['KR_UPSCALER'] = display.get('upscaler', 'bilinear')
     env['KR_FLIP_WAIT_MARGIN_US'] = '1000' if perf.get('low_core_cpu') else '0'
     env['BB_FPS_PRINT'] = '1'
     if perf.get('mangohud'):

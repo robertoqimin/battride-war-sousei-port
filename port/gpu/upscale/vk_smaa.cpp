@@ -12,6 +12,7 @@
 #include "bbgpu/shaders/smaa_blend_comp.h"
 #include "bbgpu/shaders/smaa_edges_comp.h"
 #include "bbgpu/shaders/smaa_weights_comp.h"
+#include "bbgpu/shaders/fxaa_comp.h"
 #include "render/scheduler.h"
 #include "third_party/smaa/AreaTex.h"
 #include "third_party/smaa/SearchTex.h"
@@ -111,6 +112,7 @@ Smaa::Smaa(const Instance& instance_, Scheduler& scheduler_)
     edges_pipeline = create(SMAA_EDGES_COMP);
     weights_pipeline = create(SMAA_WEIGHTS_COMP);
     blend_pipeline = create(SMAA_BLEND_COMP);
+    fxaa_pipeline = create(FXAA_COMP);
 }
 
 Smaa::~Smaa() = default;
@@ -308,6 +310,48 @@ bool Smaa::Record(vk::ImageView color_view, vk::ImageLayout color_layout, u32 wi
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, blend_pipeline);
             push(color_view, color_layout, output_view, weights_view, vk::ImageLayout::eGeneral,
                  {});
+            Barrier(cmdbuf, output, vk::ImageLayout::eGeneral, compute, write, all, any);
+        });
+    return true;
+}
+
+bool Smaa::RecordFxaa(vk::ImageView color_view, vk::ImageLayout color_layout, u32 width,
+                      u32 height) {
+    if (!color_view || width == 0 || height == 0 || !EnsureImages(width, height)) {
+        return false;
+    }
+    const std::array<float, 4> metrics{1.0f / float(width), 1.0f / float(height), float(width),
+                                       float(height)};
+    scheduler.RecordCrumb(
+        {.name = "FXAA"},
+        [metrics, color_view, color_layout, output = vk::Image(output_image),
+         output_view = *output_view, pipeline = *fxaa_pipeline,
+         layout = *pipeline_layout](vk::CommandBuffer cmdbuf) {
+            constexpr auto compute = vk::PipelineStageFlagBits2::eComputeShader;
+            constexpr auto all = vk::PipelineStageFlagBits2::eAllCommands;
+            constexpr auto any =
+                vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite;
+            constexpr auto write = vk::AccessFlagBits2::eShaderStorageWrite;
+            Barrier(cmdbuf, output, vk::ImageLayout::eUndefined, all, any, compute, write);
+            const vk::DescriptorImageInfo infos[2] = {
+                {.imageView = color_view, .imageLayout = color_layout},
+                {.imageView = output_view, .imageLayout = vk::ImageLayout::eGeneral},
+            };
+            const std::array<vk::WriteDescriptorSet, 2> writes = {{
+                {.dstBinding = 0,
+                 .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+                 .pImageInfo = &infos[0]},
+                {.dstBinding = 1,
+                 .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageImage,
+                 .pImageInfo = &infos[1]},
+            }};
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
+            cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0, writes);
+            cmdbuf.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(metrics),
+                                 &metrics);
+            cmdbuf.dispatch((u32(metrics[2]) + 7) / 8, (u32(metrics[3]) + 7) / 8, 1);
             Barrier(cmdbuf, output, vk::ImageLayout::eGeneral, compute, write, all, any);
         });
     return true;

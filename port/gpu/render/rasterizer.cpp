@@ -852,6 +852,8 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
 }
 
 void Rasterizer::NoteUpscalerDraw(const GraphicsPipeline* pipeline) {
+    // kr-port: with or without the upscaler (BB_UPSCALER=none by default): the scene's SMAA.
+    upscaler->SceneEndAntiAliasing(cb_descs[0].first, db_desc.first);
     // Single-target passes: the upscaler looks for the scene's and the UI's (UiComposition).
     if (upscaler->Enabled() && std::popcount(pipeline->GetGraphicsKey().mrt_mask) == 1) {
         const auto& viewport = Regs().viewports[0];

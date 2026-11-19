@@ -22,6 +22,8 @@ public:
         /// kr-port: an area filter when the input is larger than the output (KR_DOWNSCALE=0:
         /// the bilinear read).
         u32 area_filter = 1;
+        /// kr-port: FSR 1 EASU when the input is smaller than the output (KR_UPSCALER=fsr1).
+        u32 fsr = 0;
     };
 
     EncodePass(vk::Device device, vk::Format output_format);

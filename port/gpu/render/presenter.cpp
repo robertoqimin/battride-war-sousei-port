@@ -8,6 +8,7 @@
 #include <chrono>
 #include <thread>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 
 #include <vk_mem_alloc.h>
@@ -161,6 +162,19 @@ VideoCore::Image& Presenter::RegisterVideoOutSurface(
     auto& image = texture_cache.GetImage(image_id);
     image.usage.vo_surface = 1u;
     return image;
+}
+
+/// kr-port: KR_UPSCALER=fsr1: frames smaller than the window (KR_RES below its size) are
+/// upscaled by FSR 1 (EASU) instead of read bilinearly.
+static bool FsrUpscaleEnabled() {
+    static const bool enabled = [] {
+        const char* env = std::getenv("KR_UPSCALER");
+        const bool on = env && std::strcmp(env, "fsr1") == 0;
+        std::printf("Presenter: frames smaller than the window are %s (KR_UPSCALER)\n",
+                    on ? "upscaled by FSR 1" : "read bilinearly");
+        return on;
+    }();
+    return enabled;
 }
 
 /// kr-port: KR_DOWNSCALE=0 turns off the area filter of frames scaled down to the window.
@@ -327,6 +341,7 @@ Frame* Presenter::PrepareFrame(const BbVideoOut::BufferAttributeGroup& attribute
                        ? std::clamp(BbSettings::Get().sharpness.load(), 0.0f, 2.0f)
                        : 0.0f,
         .area_filter = AreaFilterEnabled() ? 1u : 0u, // kr-port
+        .fsr = FsrUpscaleEnabled() ? 1u : 0u,          // kr-port
     };
     // Numbered here, in command order; marked where the commands are recorded.
     const u32 stream = draw_scheduler.CrumbStream();

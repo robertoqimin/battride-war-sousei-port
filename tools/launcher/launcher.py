@@ -259,13 +259,20 @@ def main():
             self.mode = combo_row('Window', None, core.WINDOW_MODES, display.get('mode'), 'windowed')
             self.render = combo_row('Render resolution', 'Above your screen\'s size it works as supersampling',
                                     core.RENDER_SIZES, display.get('render'), '1080p')
-            self.fps = combo_row('Frame rate', 'The game speed is the same either way', core.FRAME_RATES,
+            self.fps = combo_row('Frame rate', 'Same game speed at every rate', core.FRAME_RATES,
                                  str(display.get('fps')), '60')
+            self.vsync = switch_row('VSync', 'No tearing. Off: frames are shown as soon as they are ready '
+                                    '(lowest latency, some tearing)', display.get('vsync', True))
+            self.aa = combo_row('Anti-aliasing', 'Smooths the 3D scene\'s edges; the HUD stays as it is',
+                                core.ANTI_ALIASING, display.get('anti_aliasing'), 'off')
+            self.upscaler = combo_row('Upscaler', 'For a render resolution below the window\'s',
+                                      core.UPSCALERS, display.get('upscaler'), 'bilinear')
             self.area = switch_row('Sharp downscaling', 'An area filter when the render resolution is larger '
                                    'than the window (off: bilinear)', display.get('area_filter', True))
             self.show_fps = switch_row('Show the frame rate', 'In a corner of the game window',
                                        display.get('show_fps'))
-            for row in (self.mode, self.render, self.fps, self.area, self.show_fps):
+            for row in (self.mode, self.render, self.fps, self.vsync, self.aa, self.upscaler, self.area,
+                        self.show_fps):
                 screen.add(row)
             page.add(screen)
             perf_saved = settings['performance']
@@ -283,16 +290,30 @@ def main():
             for row in (self.low_cpu, self.gamemode, self.hud):
                 perf.add(row)
             page.add(perf)
-            for row in (self.mode, self.render, self.fps):
+            for row in (self.mode, self.render, self.fps, self.aa, self.upscaler):
                 row.connect('notify::selected', lambda *_: self.settings_changed())
-            for row in (self.area, self.show_fps, self.low_cpu, self.gamemode, self.hud):
+            for row in (self.vsync, self.area, self.show_fps, self.low_cpu, self.gamemode, self.hud):
                 row.switch.connect('notify::active', lambda *_: self.settings_changed())
             self.lockable += [screen, perf]
             return page
 
+        def screen_refresh(self):
+            """The refresh rate (Hz) of the screen the launcher's window is on, or None."""
+            try:
+                display = Gdk.Display.get_default()
+                surface = self.win.get_surface()
+                monitor = display.get_monitor_at_surface(surface) if surface else None
+                if monitor is None and display.get_monitors().get_n_items():
+                    monitor = display.get_monitors().get_item(0)
+                return monitor.get_refresh_rate() / 1000 if monitor and monitor.get_refresh_rate() else None
+            except (AttributeError, TypeError):
+                return None
+
         def settings_changed(self):
             settings['display'].update({'mode': self.mode.value(), 'render': self.render.value(),
-                                        'fps': self.fps.value(), 'area_filter': self.area.switch.get_active(),
+                                        'fps': self.fps.value(), 'vsync': self.vsync.switch.get_active(),
+                                        'anti_aliasing': self.aa.value(), 'upscaler': self.upscaler.value(),
+                                        'area_filter': self.area.switch.get_active(),
                                         'show_fps': self.show_fps.switch.get_active()})
             settings['performance'].update({'low_core_cpu': self.low_cpu.switch.get_active(),
                                             'gamemode': self.gamemode.switch.get_active(),
@@ -573,6 +594,7 @@ def main():
             self.log_offsets, self.log_current = {}, None
             self.log_view.get_buffer().set_text('')
             snapshot = core.json.loads(core.json.dumps(settings))
+            screen_hz = self.screen_refresh()
             log_dir, runner = self.log_dir, self.runner
             self.busy = True
             self.set_busy(True)
@@ -587,7 +609,7 @@ def main():
                     self.message('Starting the game. Logs: %s' % log_dir)
                     with (log_dir / 'game.log').open('wb') as log:
                         code = runner.run(core.game_command(data, snapshot), log=log, cwd=data,
-                                          env=core.game_env(data, snapshot))
+                                          env=core.game_env(data, snapshot, screen_hz))
                     self.message('Game closed.' if code in (0, -15, 143) else
                                  'The game stopped (exit %d). The Log page shows why; logs: %s' % (code, log_dir))
                 except (OSError, core.SetupError, ValueError) as e:

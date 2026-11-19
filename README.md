@@ -39,11 +39,32 @@ Step-by-step development reports (in Portuguese) are in [`docs/relatorios/`](doc
 
 ### 1. Dependencies (Linux)
 You need:
-- GCC or Clang, CMake, Ninja and pkg-config;
-- the **Vulkan** headers and loader, **SDL3** and zlib;
+- GCC or Clang, CMake (3.24 or newer), Ninja, pkg-config and git;
+- the **Vulkan** headers and loader, and **glslang** (`glslang` or `glslangValidator`);
+- **SDL3**, zlib and libX11;
+- **FFmpeg** (libavformat, libavcodec, libavutil, libswscale, libswresample);
+- **Boost** (headers), **fmt**, **xxHash**, **tsl-robin-map** and **Zydis**;
+- the header-only **xbyak** and **Vulkan Memory Allocator** (`vk_mem_alloc.h`);
 - Python 3.
 
-See `port/build.sh`. On NixOS, bbport's `shell.nix` is a good reference.
+magic_enum and miniz are optional: CMake downloads them when the system has none. OpenSSL is optional.
+
+On Arch Linux and CachyOS:
+```sh
+sudo pacman -S --needed base-devel cmake ninja git pkgconf vulkan-headers vulkan-icd-loader glslang \
+    sdl3 zlib libx11 ffmpeg boost fmt xxhash robin-map zydis miniz python
+```
+Arch has no package for xbyak or VMA. Put their headers in a folder (for example `port/out/deps`, which git
+ignores) and point the build at it:
+```sh
+mkdir -p port/out/deps/vma
+git clone --depth 1 --branch v7.24 https://github.com/herumi/xbyak.git port/out/deps/xbyak-src
+ln -s xbyak-src/xbyak port/out/deps/xbyak
+curl -fsSL -o port/out/deps/vma/vk_mem_alloc.h \
+    https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/v3.3.0/include/vk_mem_alloc.h
+export CMAKE_INCLUDE_PATH="$PWD/port/out/deps" CPLUS_INCLUDE_PATH="$PWD/port/out/deps"
+```
+These variables must be set for every `./build.sh` run.
 
 ### 2. Compile
 ```sh
@@ -98,7 +119,11 @@ Saves are stored in `user/savedata/`.
 
 | Variable | Effect |
 |---|---|
-| `KR_FPS=30` | restores the original 30 FPS gameplay cap (default **60**) |
+| `KR_FPS=N` | gameplay frame rate, 30 to 240 (default **60**; `30` is the original cap). The game speed stays the same. Above 60, also set `BB_VBLANK_HZ=N` |
+| `BB_VBLANK_HZ=N` | the emulated vblank rate (default **60**); flips wait for it, so it must be at least `KR_FPS` |
+| `KR_UPSCALER=fsr1` | a render size below the window's (`KR_RES`) is upscaled by AMD FSR 1 (EASU) instead of bilinearly; the HUD is upscaled with the scene |
+| `anti_aliasing=` in `BB_CONFIG` | `smaa` or `fxaa`: anti-aliasing of the 3D scene before the HUD is drawn (the HUD stays sharp); `off` (default) |
+| `BB_PRESENT_MODE` | `Mailbox` (default: VSync without tearing), `Immediate` (VSync off) or `Fifo` (strict VSync: a late frame halves the rate) |
 | `KR_RES=1440p` | render size: `720p`, `1080p` (the game's own), `1440p`, `4k` or `WIDTHxHEIGHT`. Above your window's size it works as supersampling (sharper edges). RX 6750 XT: 1440p holds 60 FPS, 4K drops to 43-55 FPS in combat |
 | `KR_DOWNSCALE=0` | turns off the area filter used when the frame is larger than the window (default **on**: each window pixel averages the frame pixels it covers, in linear light; off: the old bilinear read) |
 | `KR_AVPLAYER_HOLD=N` | movie frames kept from the decoder after the game moves past them (default **3**; `0` = the old behaviour, which showed a wrong frame for an instant several times per second) |

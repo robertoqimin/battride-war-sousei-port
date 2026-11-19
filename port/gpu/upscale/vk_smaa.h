@@ -24,6 +24,8 @@ public:
     /// UNORM view) of `width` x `height`. The result is Output(), RGBA8 in the GENERAL layout,
     /// readable by any later command. False: nothing recorded.
     bool Record(vk::ImageView color_view, vk::ImageLayout color_layout, u32 width, u32 height);
+    /// kr-port: FXAA instead, one pass over `color` into the same Output().
+    bool RecordFxaa(vk::ImageView color_view, vk::ImageLayout color_layout, u32 width, u32 height);
 
     [[nodiscard]] vk::Image Output() const {
         return vk::Image(output_image);
@@ -42,6 +44,7 @@ private:
     vk::UniquePipeline edges_pipeline;
     vk::UniquePipeline weights_pipeline;
     vk::UniquePipeline blend_pipeline;
+    vk::UniquePipeline fxaa_pipeline;
     VideoCore::HostImage area_image, search_image; ///< SMAA's precomputed lookup textures
     vk::UniqueImageView area_view, search_view;
     bool uploaded = false;

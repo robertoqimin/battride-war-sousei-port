@@ -1,0 +1,149 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// kr-port: FXAA (fast approximate anti-aliasing, after Timothy Lottes' algorithm) on the game's
+// finished 3D scene, an alternative to SMAA that is cheaper and softer (upscale/vk_smaa.cpp,
+// Smaa::RecordFxaa). One compute pass over the gamma-space colour (a UNORM view):
+//   1. the luma contrast around the pixel; low-contrast pixels are left as they are;
+//   2. the edge's direction (horizontal or vertical) and which side of the pixel it is on;
+//   3. a search along the edge in both directions for its ends;
+//   4. a sample offset across the edge by how far the pixel is from the nearer end, combined
+//      with a sub-pixel blend for one-pixel-wide details.
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(push_constant) uniform Constants {
+    vec4 metrics; // 1 / width, 1 / height, width, height
+};
+
+layout(binding = 0) uniform sampler2D color_tex; // linear filtering, clamped
+layout(binding = 1, rgba8) uniform writeonly image2D output_img;
+
+const float EDGE_THRESHOLD = 0.125;      // the contrast an edge needs, relative to the local maximum
+const float EDGE_THRESHOLD_MIN = 0.0312; // ...and at the least (dark areas)
+const float SUBPIXEL_QUALITY = 0.75;
+const int SEARCH_STEPS = 12;
+const float STEP_SIZES[SEARCH_STEPS] = float[](1.0, 1.0, 1.0, 1.0, 1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0);
+
+float Luma(vec3 rgb) {
+    return dot(rgb, vec3(0.299, 0.587, 0.114));
+}
+
+float LumaAt(vec2 uv) {
+    return Luma(textureLod(color_tex, uv, 0.0).rgb);
+}
+
+float LumaOffset(vec2 uv, ivec2 offset) {
+    return Luma(textureLod(color_tex, uv + vec2(offset) * metrics.xy, 0.0).rgb);
+}
+
+void main() {
+    const ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (pixel.x >= int(metrics.z) || pixel.y >= int(metrics.w)) {
+        return;
+    }
+    const vec2 texel = metrics.xy;
+    const vec2 uv = (vec2(pixel) + 0.5) * texel;
+    const vec4 center = textureLod(color_tex, uv, 0.0);
+
+    // 1. Local contrast.
+    const float luma_c = Luma(center.rgb);
+    const float luma_d = LumaOffset(uv, ivec2(0, 1));
+    const float luma_u = LumaOffset(uv, ivec2(0, -1));
+    const float luma_l = LumaOffset(uv, ivec2(-1, 0));
+    const float luma_r = LumaOffset(uv, ivec2(1, 0));
+    const float luma_min = min(luma_c, min(min(luma_d, luma_u), min(luma_l, luma_r)));
+    const float luma_max = max(luma_c, max(max(luma_d, luma_u), max(luma_l, luma_r)));
+    const float range = luma_max - luma_min;
+    if (range < max(EDGE_THRESHOLD_MIN, luma_max * EDGE_THRESHOLD)) {
+        imageStore(output_img, pixel, center);
+        return;
+    }
+
+    // 2. Direction: compare the horizontal and vertical second differences.
+    const float luma_dl = LumaOffset(uv, ivec2(-1, 1));
+    const float luma_ur = LumaOffset(uv, ivec2(1, -1));
+    const float luma_ul = LumaOffset(uv, ivec2(-1, -1));
+    const float luma_dr = LumaOffset(uv, ivec2(1, 1));
+    const float luma_du = luma_d + luma_u;
+    const float luma_lr = luma_l + luma_r;
+    const float luma_left_corners = luma_dl + luma_ul;
+    const float luma_down_corners = luma_dl + luma_dr;
+    const float luma_right_corners = luma_dr + luma_ur;
+    const float luma_up_corners = luma_ur + luma_ul;
+    const float edge_h = abs(-2.0 * luma_l + luma_left_corners) +
+                         abs(-2.0 * luma_c + luma_du) * 2.0 +
+                         abs(-2.0 * luma_r + luma_right_corners);
+    const float edge_v = abs(-2.0 * luma_u + luma_up_corners) +
+                         abs(-2.0 * luma_c + luma_lr) * 2.0 +
+                         abs(-2.0 * luma_d + luma_down_corners);
+    const bool horizontal = edge_h >= edge_v;
+
+    // Which side of the pixel the edge is on: the neighbour with the steeper gradient.
+    const float luma_1 = horizontal ? luma_u : luma_l;
+    const float luma_2 = horizontal ? luma_d : luma_r;
+    const float gradient_1 = abs(luma_1 - luma_c);
+    const float gradient_2 = abs(luma_2 - luma_c);
+    const bool side_1 = gradient_1 >= gradient_2;
+    const float gradient_scaled = 0.25 * max(gradient_1, gradient_2);
+    float step_length = horizontal ? texel.y : texel.x;
+    float luma_local_average;
+    if (side_1) {
+        step_length = -step_length;
+        luma_local_average = 0.5 * (luma_1 + luma_c);
+    } else {
+        luma_local_average = 0.5 * (luma_2 + luma_c);
+    }
+    vec2 edge_uv = uv;
+    if (horizontal) {
+        edge_uv.y += step_length * 0.5;
+    } else {
+        edge_uv.x += step_length * 0.5;
+    }
+
+    // 3. Search both ways along the edge for where it ends.
+    const vec2 offset = horizontal ? vec2(texel.x, 0.0) : vec2(0.0, texel.y);
+    vec2 uv_1 = edge_uv - offset * STEP_SIZES[0];
+    vec2 uv_2 = edge_uv + offset * STEP_SIZES[0];
+    float luma_end_1 = LumaAt(uv_1) - luma_local_average;
+    float luma_end_2 = LumaAt(uv_2) - luma_local_average;
+    bool reached_1 = abs(luma_end_1) >= gradient_scaled;
+    bool reached_2 = abs(luma_end_2) >= gradient_scaled;
+    for (int i = 1; i < SEARCH_STEPS && !(reached_1 && reached_2); ++i) {
+        if (!reached_1) {
+            uv_1 -= offset * STEP_SIZES[i];
+            luma_end_1 = LumaAt(uv_1) - luma_local_average;
+            reached_1 = abs(luma_end_1) >= gradient_scaled;
+        }
+        if (!reached_2) {
+            uv_2 += offset * STEP_SIZES[i];
+            luma_end_2 = LumaAt(uv_2) - luma_local_average;
+            reached_2 = abs(luma_end_2) >= gradient_scaled;
+        }
+    }
+    const float distance_1 = horizontal ? (uv.x - uv_1.x) : (uv.y - uv_1.y);
+    const float distance_2 = horizontal ? (uv_2.x - uv.x) : (uv_2.y - uv.y);
+    const bool nearer_1 = distance_1 < distance_2;
+    const float distance_final = min(distance_1, distance_2);
+    const float edge_length = distance_1 + distance_2;
+    float pixel_offset = -distance_final / edge_length + 0.5;
+    // Only when the end's luma variation agrees with the centre's side of the edge.
+    const bool center_smaller = luma_c < luma_local_average;
+    const bool correct_variation = ((nearer_1 ? luma_end_1 : luma_end_2) < 0.0) != center_smaller;
+    pixel_offset = correct_variation ? pixel_offset : 0.0;
+
+    // 4. Sub-pixel aliasing: one-pixel details get the 3x3 average's pull.
+    const float luma_average = (1.0 / 12.0) * (2.0 * (luma_du + luma_lr) + luma_left_corners +
+                                               luma_right_corners);
+    const float subpixel_1 = clamp(abs(luma_average - luma_c) / range, 0.0, 1.0);
+    const float subpixel_2 = (-2.0 * subpixel_1 + 3.0) * subpixel_1 * subpixel_1;
+    const float subpixel_offset = subpixel_2 * subpixel_2 * SUBPIXEL_QUALITY;
+    pixel_offset = max(pixel_offset, subpixel_offset);
+
+    vec2 final_uv = uv;
+    if (horizontal) {
+        final_uv.y += pixel_offset * step_length;
+    } else {
+        final_uv.x += pixel_offset * step_length;
+    }
+    imageStore(output_img, pixel, vec4(textureLod(color_tex, final_uv, 0.0).rgb, center.a));
+}

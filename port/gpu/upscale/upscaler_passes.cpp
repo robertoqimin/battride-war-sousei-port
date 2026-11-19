@@ -476,10 +476,12 @@ bool TemporalUpscaler::SmaaWanted() const {
            !Active() && camera_motion.Ready();
 }
 
-vk::Image TemporalUpscaler::RunSmaa(VideoCore::ImageId color_id, bool proxy) {
+vk::Image TemporalUpscaler::RunSmaa(VideoCore::ImageId color_id, bool proxy, bool fxaa) {
     auto& color = texture_cache.GetImage(color_id);
-    // Gamma-space RGBA8 (luma edges want it so), sampled through its own UNORM format.
-    if (color.info.pixel_format != vk::Format::eR8G8B8A8Unorm ||
+    // Gamma-space RGBA8 (luma edges want it so), sampled through a UNORM view (kr-port: this
+    // game's scene is sRGB; the view reads its encoded bytes, which is the gamma space SMAA wants).
+    if ((color.info.pixel_format != vk::Format::eR8G8B8A8Unorm &&
+         color.info.pixel_format != vk::Format::eR8G8B8A8Srgb) ||
         !(color.usage_flags & vk::ImageUsageFlagBits::eSampled)) {
         return {};
     }
@@ -506,7 +508,9 @@ vk::Image TemporalUpscaler::RunSmaa(VideoCore::ImageId color_id, bool proxy) {
                         vk::AccessFlagBits2::eShaderRead);
         runtime.FlushBarriers();
     }
-    return smaa->Record(view, layout, width, height) ? smaa->Output() : vk::Image{};
+    const bool recorded = fxaa ? smaa->RecordFxaa(view, layout, width, height)
+                               : smaa->Record(view, layout, width, height);
+    return recorded ? smaa->Output() : vk::Image{};
 }
 
 } // namespace Vulkan

@@ -357,6 +357,8 @@ bool TemporalUpscaler::OnFrameStart() {
     ui_read_barrier = false;
     done_this_frame = false;
     smaa_done = false;
+    kr_scene = {};
+    kr_scene_drawn = false;
     ldr_target = {};
     scene_color = {};
     snapshot_taken = false;

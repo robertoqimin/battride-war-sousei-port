@@ -161,6 +161,8 @@ add_own_shader(upscale/shaders/fg_display_lut.comp fg_display_lut_comp)
 add_own_shader(upscale/shaders/smaa.comp smaa_edges_comp PASS=0)
 add_own_shader(upscale/shaders/smaa.comp smaa_weights_comp PASS=1)
 add_own_shader(upscale/shaders/smaa.comp smaa_blend_comp PASS=2)
+# kr-port: FXAA for anti_aliasing=fxaa (the same class; one pass).
+add_own_shader(upscale/shaders/fxaa.comp fxaa_comp)
 # bbport: FSR 3.1 frame generation passes compiled here (ffx_vk.cpp ffxVkShaderOverride): the SDK's
 # GLSL with its own headers, as FidelityFX_SC builds them (-Os, Vulkan 1.2), changed where faster.
 set(FFX_GPU_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fsr-vulkan/upstream/ffx-1.1.4/sdk/include/FidelityFX/gpu)

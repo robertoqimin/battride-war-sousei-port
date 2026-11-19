@@ -5,6 +5,7 @@
 // through a UNORM view are decoded first. HDR: passed through. sharpen > 0 (no upscaler): RCAS
 // (FSR 1's robust contrast-adaptive sharpening) over the source's texel and its 4 neighbours.
 #version 450
+#extension GL_GOOGLE_include_directive : require
 
 layout(location = 0) in vec2 uv;
 layout(location = 0) out vec4 color;
@@ -17,7 +18,38 @@ layout(push_constant) uniform Settings {
     bool srgb_input;
     float sharpen;
     bool area_filter;
+    bool fsr; // kr-port: FSR 1 EASU when the source is smaller than the output (KR_UPSCALER=fsr1)
 } settings;
+
+// kr-port: FSR 1's EASU (third_party/amd-fsr1, MIT): edge-adaptive spatial upscaling of the whole
+// frame, in place of the bilinear read, for a render size below the window's (KR_RES). The HUD is
+// in the same frame and is upscaled with it.
+#define A_GPU 1
+#define A_GLSL 1
+#include "fsr/ffx_a.h"
+#define FSR_EASU_F 1
+AF4 FsrEasuRF(AF2 p) { return textureGather(source, p, 0); }
+AF4 FsrEasuGF(AF2 p) { return textureGather(source, p, 1); }
+AF4 FsrEasuBF(AF2 p) { return textureGather(source, p, 2); }
+#include "fsr/ffx_fsr1.h"
+
+vec3 Easu(vec2 ratio) {
+    const vec2 in_size = vec2(textureSize(source, 0));
+    const vec2 out_size = floor(in_size / ratio + 0.5);
+    // FsrEasuCon (ffx_fsr1.h) for the whole source scaled to the whole output.
+    const uvec4 con0 = uvec4(floatBitsToUint(in_size.x / out_size.x),
+                             floatBitsToUint(in_size.y / out_size.y),
+                             floatBitsToUint(0.5 * in_size.x / out_size.x - 0.5),
+                             floatBitsToUint(0.5 * in_size.y / out_size.y - 0.5));
+    const uvec4 con1 = uvec4(floatBitsToUint(1.0 / in_size.x), floatBitsToUint(1.0 / in_size.y),
+                             floatBitsToUint(1.0 / in_size.x), floatBitsToUint(-1.0 / in_size.y));
+    const uvec4 con2 = uvec4(floatBitsToUint(-1.0 / in_size.x), floatBitsToUint(2.0 / in_size.y),
+                             floatBitsToUint(1.0 / in_size.x), floatBitsToUint(2.0 / in_size.y));
+    const uvec4 con3 = uvec4(floatBitsToUint(0.0), floatBitsToUint(4.0 / in_size.y), 0u, 0u);
+    vec3 c;
+    FsrEasuF(c, uvec2(gl_FragCoord.xy), con0, con1, con2, con3);
+    return c;
+}
 
 // The sRGB curve's constants: linear below the knee, a power above it.
 const float Knee = 0.0031308;
@@ -98,7 +130,9 @@ void main() {
         color = settings.hdr ? texel : vec4(Encode(texel.rgb), texel.a);
         return;
     }
-    vec4 texel = texture(source, uv);
+    const bool upscale = ratio.x < 0.999 || ratio.y < 0.999;
+    vec4 texel = settings.fsr && upscale && !settings.hdr ? vec4(Easu(ratio), texture(source, uv).a)
+                                                         : texture(source, uv);
     if (settings.hdr) {
         color = texel;
         return;

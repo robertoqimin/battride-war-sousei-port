@@ -101,6 +101,65 @@ void TemporalUpscaler::OnColorTarget(VideoCore::ImageId color) {
     }
 }
 
+void TemporalUpscaler::CopyBack(vk::Image smoothed, VideoCore::ImageId target) {
+    auto& image = texture_cache.GetImage(target);
+    runtime.Transit(&image, vk::ImageLayout::eTransferDstOptimal, vk::PipelineStageFlagBits2::eCopy,
+                    vk::AccessFlagBits2::eTransferWrite);
+    runtime.FlushBarriers();
+    // RGBA8 UNORM into RGBA8 UNORM or sRGB: the same bytes (a size-compatible copy), so the
+    // gamma-space result stays as it is.
+    const vk::ImageCopy region{
+        .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        .extent = {image.info.size.width, image.info.size.height, 1},
+    };
+    scheduler.Record([smoothed, dst = image.GetImage(), region](vk::CommandBuffer cmd) {
+        cmd.copyImage(smoothed, vk::ImageLayout::eGeneral, dst, vk::ImageLayout::eTransferDstOptimal,
+                      region);
+    });
+}
+
+// kr-port: Kamen Rider Battride War Genesis draws a frame into one full-size RGBA8 target (sRGB or
+// UNORM, two alternating images) with a D32S8 depth of the same size: the 3D scene (one block of
+// depth-tested draws), a copy of it for the bloom, the bloom composited back, a second, shorter
+// block of 3D draws (effects), then the HUD (no depth) and the display pass. SMAA runs on that
+// image when a block of 3D draws ends, before the next draw (the bloom's copy, the HUD) reads or
+// covers it: the HUD is never smoothed. Called for every draw before its rendering begins.
+void TemporalUpscaler::SceneEndAntiAliasing(VideoCore::ImageId color, VideoCore::ImageId depth) {
+    if (color && depth) {
+        const auto& image = texture_cache.GetImage(color);
+        const auto& depth_image = texture_cache.GetImage(depth);
+        const auto format = image.info.pixel_format;
+        if ((format == vk::Format::eR8G8B8A8Srgb || format == vk::Format::eR8G8B8A8Unorm) &&
+            depth_image.info.pixel_format == vk::Format::eD32SfloatS8Uint &&
+            image.info.size.width >= 640 && image.info.size.width == depth_image.info.size.width &&
+            image.info.size.height == depth_image.info.size.height) {
+            kr_scene = color;
+            kr_scene_drawn = true;
+            return;
+        }
+    }
+    if (!kr_scene_drawn) {
+        return;
+    }
+    kr_scene_drawn = false; // the block ended
+    const int mode = BbSettings::Get().anti_aliasing.load(std::memory_order_relaxed);
+    if ((mode != BbSettings::AaSmaa && mode != BbSettings::AaFxaa) || Active()) {
+        return;
+    }
+    const bool fxaa = mode == BbSettings::AaFxaa;
+    if (const vk::Image smoothed = RunSmaa(kr_scene, false, fxaa)) {
+        CopyBack(smoothed, kr_scene);
+        static int logged = -1;
+        if (logged != mode) {
+            logged = mode;
+            const auto& image = texture_cache.GetImage(kr_scene);
+            std::printf("Anti-aliasing: %s on the 3D scene (%ux%u), before the HUD\n",
+                        fxaa ? "FXAA" : "SMAA", image.info.size.width, image.info.size.height);
+        }
+    }
+}
+
 void TemporalUpscaler::OnDraw(u64 vs_hash, VideoCore::ImageId color,
                               VideoCore::ImageId depth, bool native_viewport) {
     if (!Scaled() && vs_hash == ui_trigger_vs) {
